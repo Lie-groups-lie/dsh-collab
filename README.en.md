@@ -195,3 +195,9 @@ Extract the repository source ZIP into a permanent directory. Its root is a DSH 
 The DSH-side package is `dsh-codex-collab@0.4.0-rc.2`. Enter that exact name in the desktop npm plugin source, or run `dsh plugin --profile web add dsh-codex-collab@0.4.0-rc.2` for a Web profile. The npm package named `dsh-collab` belongs to another account.
 
 The npm package contains only the DSH service. Install the Codex and/or Claude Code entries from the separate Clients download as described above. They share connection code but run separate MCP processes against the same DSH service. Coordinate continuation ownership for the same Lead.
+
+### Migrating a local development install to npm
+
+When changing the same package from a local link/path to npm, a running host can retain old module paths. Successful installation does not establish a successful hot reload. If errors still name an old directory while npm installation and the installed manifest are correct, check running work, fully quit the DSH desktop normally, and reopen it. A page refresh may be insufficient. Do not delete session stores, task ledgers or locks, or recreate an obsolete directory to hide the error. Retain old build directories until processes using them have exited.
+
+In addition to fresh installs, the local-link → normal shutdown → uninstall → npm install → reopen and connection-check flow passed on community Desktop 2.0.18 on 2026-11-01 with no model calls. Changing installation sources in a live process without a restart is not a validated migration route.
