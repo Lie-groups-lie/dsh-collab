@@ -189,3 +189,9 @@ Research 数学研究扩展暂不随本次产品分发，后续完成后再单�
 ## 从仓库目录安装
 
 下载仓库源码 ZIP 并解压到固定目录后，根目录可作为 DSH bundle 和 Codex/Claude 插件市场。运行 `dsh plugin --profile web add C:/Packages/dsh-collab` 安装 DSH 端；桌面版请使用其插件管理器。Codex 使用 `codex plugin marketplace add C:/Packages/dsh-collab`，Claude Code 使用 `/plugin marketplace add C:/Packages/dsh-collab`，随后按上文安装对应插件。连接发现配置仍然必需。已配置同名市场时更新原来源，不重复注册。
+
+## npm 安装入口
+
+DSH 端已发布为 `dsh-codex-collab@0.4.0-rc.2`，可在桌面“添加插件”的 npm 源中填写这个完整名称。Web profile 使用 `dsh plugin --profile web add dsh-codex-collab@0.4.0-rc.2`。`dsh-collab` 是其他账号的 npm 包，不是本项目。
+
+npm 包只包含 DSH 端服务。Codex 和 Claude Code 各自的连接入口位于 Clients 下载包中，按上文选择安装。二者共享连接代码，但各自运行独立 MCP 进程，连接同一个 DSH 服务；同一 Lead 的推进仍需协调。

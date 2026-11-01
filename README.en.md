@@ -189,3 +189,9 @@ Outstanding checks include installation on a clean Windows machine, other deskto
 ## Install from a repository directory
 
 Extract the repository source ZIP into a permanent directory. Its root is a DSH bundle and a Codex/Claude marketplace. Install the DSH side with `dsh plugin --profile web add C:/Packages/dsh-collab`; desktop users should use their host plugin manager. Add the marketplace with `codex plugin marketplace add C:/Packages/dsh-collab` or `/plugin marketplace add C:/Packages/dsh-collab` in Claude Code, then install the respective plugin as described above. Connection discovery is still required. Update an existing marketplace of the same name instead of registering it twice.
+
+## npm installation
+
+The DSH-side package is `dsh-codex-collab@0.4.0-rc.2`. Enter that exact name in the desktop npm plugin source, or run `dsh plugin --profile web add dsh-codex-collab@0.4.0-rc.2` for a Web profile. The npm package named `dsh-collab` belongs to another account.
+
+The npm package contains only the DSH service. Install the Codex and/or Claude Code entries from the separate Clients download as described above. They share connection code but run separate MCP processes against the same DSH service. Coordinate continuation ownership for the same Lead.
