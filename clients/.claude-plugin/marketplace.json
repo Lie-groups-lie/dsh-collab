@@ -1,0 +1,12 @@
+{
+  "name": "dsh-collab-clients",
+  "owner": {
+    "name": "DSH Collab contributors"
+  },
+  "plugins": [
+    {
+      "name": "dsh-collab",
+      "source": "./hosts/claude"
+    }
+  ]
+}

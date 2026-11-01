@@ -1,0 +1,10 @@
+{
+  "dshVersion": "0.2.1-rc.2",
+  "bridgeVersion": "2026.10.19.3",
+  "provider": "deepseek-official",
+  "flashModel": "deepseek-flash",
+  "defaultMaxOutputTokens": 393216,
+  "maxOutputTokens": 393216,
+  "defaultMaxTranscriptTokens": 0,
+  "contextWindow": 1000000
+}

@@ -1,0 +1,17 @@
+{
+  "name": "dsh-collab-clients",
+  "plugins": [
+    {
+      "name": "dsh-codex-collab",
+      "source": {
+        "source": "local",
+        "path": "./clients/hosts/codex"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

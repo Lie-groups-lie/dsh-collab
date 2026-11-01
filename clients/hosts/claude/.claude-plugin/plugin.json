@@ -1,0 +1,17 @@
+{
+  "name": "dsh-collab",
+  "version": "0.4.0-rc.2",
+  "author": {
+    "name": "DSH Collab contributors"
+  },
+  "description": "Managed DSH collaboration through the local Runtime.",
+  "skills": "./skills/",
+  "mcpServers": {
+    "dsh_collab": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/mcp/dsh-collab-mcp.exe",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/mcp/server.mjs"
+      ]
+    }
+  }
+}

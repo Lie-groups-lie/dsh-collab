@@ -1,0 +1,34 @@
+{
+  "name": "dsh-collab-clients",
+  "version": "0.4.0-rc.2",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "Codex and Claude Code adapters for the same local DSH Collab runtime.",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "files": [
+    "lib/",
+    "mcp/",
+    "hosts/",
+    "skills/",
+    "README.md",
+    "LICENSE",
+    "GUIDE.zh-CN.md",
+    "GUIDE.en.md",
+    "THIRD-PARTY-NOTICES.md",
+    "build.json",
+    ".agents/",
+    ".claude-plugin/"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lie-groups-lie/dsh-collab.git",
+    "directory": "clients"
+  },
+  "homepage": "https://github.com/lie-groups-lie/dsh-collab#readme",
+  "bugs": {
+    "url": "https://github.com/lie-groups-lie/dsh-collab/issues"
+  }
+}

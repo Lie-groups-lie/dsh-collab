@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "buildId": "fa8fb0de-7ae7-42d9-b168-7302b9d4486f",
+  "sourceDigest": "c0b99fb3e5bd7652d4860d3f3ff8a725d342de155b9c16ce91deba4f9623c77f",
+  "packageDigest": "6f642e66a4d8d96a84645dc33511936caf922394f82b26d2ea65c677dc7342a7",
+  "files": {
+    ".claude-plugin/plugin.json": "a6e7e4d88a81161ea235cd728ce2cbb4f0cb19a26b0337383250455e18a0e395",
+    "LICENSE": "6efdb7914efb135ab030e60b1cfaeb1e3e5803f5b37698bf2fd5741f1a3a79cb",
+    "lib/client.mjs": "cb81895149bd293baa146cc2fcf8206b3db436089323c9358ab218053d876b1c",
+    "lib/presentation.mjs": "1301ad401e01dfb931e3b26cdb5868ba83aeab30dda341ade7d3355f8ecdf059",
+    "lib/server.mjs": "34c927b1667a6624a102723757699fb0d7f0718acf9a8cf668ce16e43036142d",
+    "mcp/dsh-collab-mcp.exe": "0846db6bbce2797e3f14c569c437d9f75814d019c7c8adb81d5117efae4fa1f1",
+    "mcp/server.mjs": "7971280236917d61024b465cc4733604263b95c93f802694236a71c500cbdb17",
+    "mcp/tools.json": "f13c8d726eddf543fffdcd1d0be254b38ffbbc2d83a2a5e465065fddd9fb0c14",
+    "package.json": "fed2b85deedb12e343fb12b4c4f032b8b89788fa39cec5de75e90fa12a341d65",
+    "skills/dsh-collab/SKILL.md": "f27b0e3a8d88106a6370f33a073958fdbe9f81bcf4f0aa35adcb88c500f4f4dd"
+  }
+}

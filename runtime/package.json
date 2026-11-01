@@ -1,0 +1,72 @@
+{
+  "name": "dsh-codex-collab",
+  "version": "0.4.0-rc.2",
+  "private": false,
+  "license": "MIT",
+  "description": "Delegate and continue DSH agent tasks from Codex and Claude Code, with progress, policies and usage tracking.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "bin": {
+    "dsh-collab": "./bin/dsh-collab.mjs"
+  },
+  "exports": {
+    ".": "./native/index.mjs",
+    "./native": "./native/index.mjs",
+    "./client": "./web/client.js",
+    "./runtime-client": "./mcp/dsh-client.mjs",
+    "./api": "./service/index.mjs",
+    "./sdk": "./sdk/index.mjs",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-sidebar"
+      ]
+    }
+  },
+  "files": [
+    "bin/",
+    "native/",
+    "core/",
+    "sdk/",
+    "service/",
+    "runtime/",
+    "mcp/",
+    "web/",
+    "vendor/",
+    "cordis.patch.yml",
+    "runtime-contract.json",
+    "RELEASE-NOTES.md",
+    "README.md",
+    "GUIDE.zh-CN.md",
+    "THIRD-PARTY-NOTICES.md",
+    "build.json",
+    "LICENSE",
+    "GUIDE.en.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lie-groups-lie/dsh-collab.git",
+    "directory": "runtime"
+  },
+  "homepage": "https://github.com/lie-groups-lie/dsh-collab#readme",
+  "bugs": {
+    "url": "https://github.com/lie-groups-lie/dsh-collab/issues"
+  },
+  "author": "DSH Collab contributors",
+  "keywords": [
+    "deepseek-harness",
+    "dsh-plugin",
+    "codex",
+    "claude-code",
+    "multi-agent"
+  ]
+}

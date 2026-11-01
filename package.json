@@ -1,0 +1,57 @@
+{
+  "name": "dsh-codex-collab",
+  "version": "0.4.0-rc.2",
+  "private": false,
+  "license": "MIT",
+  "description": "Delegate and continue DSH agent tasks from Codex and Claude Code, with progress, policies and usage tracking.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "bin": {
+    "dsh-collab": "./runtime/bin/dsh-collab.mjs"
+  },
+  "exports": {
+    ".": "./runtime/native/index.mjs",
+    "./native": "./runtime/native/index.mjs",
+    "./client": "./runtime/web/client.js",
+    "./runtime-client": "./runtime/mcp/dsh-client.mjs",
+    "./api": "./runtime/service/index.mjs",
+    "./sdk": "./runtime/sdk/index.mjs",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./runtime/cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-sidebar"
+      ]
+    }
+  },
+  "files": [
+    "runtime/",
+    "LICENSE",
+    "README.md",
+    "README.en.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lie-groups-lie/dsh-collab.git"
+  },
+  "homepage": "https://github.com/lie-groups-lie/dsh-collab#readme",
+  "bugs": {
+    "url": "https://github.com/lie-groups-lie/dsh-collab/issues"
+  },
+  "author": "DSH Collab contributors",
+  "keywords": [
+    "deepseek-harness",
+    "dsh-plugin",
+    "codex",
+    "claude-code",
+    "multi-agent"
+  ]
+}

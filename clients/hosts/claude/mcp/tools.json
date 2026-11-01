@@ -1,0 +1,2056 @@
+[
+  {
+    "name": "deepseek_runtime_status",
+    "description": "Check the local DSH runtime, available models and agent presets without creating a session or running a model.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  {
+    "name": "deepseek_flash",
+    "description": "Run the latest official deepseek-flash model as a native, continuable DSH child agent and return its final answer. New calls are grouped below one Codex coordination session per workspace.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "task": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120000,
+          "description": "Self-contained task for the DeepSeek Flash subagent."
+        },
+        "cwd": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Workspace directory. Defaults to the desktop app workspace."
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Continue a previous native DSH child agent."
+        },
+        "permission": {
+          "type": "string",
+          "enum": [
+            "read-only",
+            "workspace-write",
+            "danger-full-access"
+          ],
+          "default": "read-only"
+        },
+        "reasoning_effort": {
+          "type": "string",
+          "enum": [
+            "off",
+            "low",
+            "high",
+            "max"
+          ],
+          "default": "high"
+        },
+        "max_output_tokens": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 393216,
+          "default": 393216,
+          "description": "Per-model-request reasoning plus visible-output cap, not the task total. Defaults to the provider maximum. Omit unless the user needs a specific per-response limit."
+        },
+        "unlimited_output_tokens": {
+          "type": "boolean",
+          "default": false,
+          "description": "Use the host safety ceiling (393216); it is not truly unbounded. Cannot be combined with max_output_tokens."
+        },
+        "max_tool_calls": {
+          "type": "integer",
+          "minimum": -1,
+          "description": "Optional per-turn tool-call limit. Omit or use -1 for no count limit. 0 disables every tool. Do not invent a small quota unless the user requests one."
+        },
+        "allow_terminal": {
+          "type": "boolean",
+          "default": false,
+          "description": "Expose pwsh/bash to this child. False removes it before the model request and also blocks execution."
+        },
+        "finalize_empty": {
+          "type": "boolean",
+          "default": true,
+          "description": "If reasoning exhausts the budget with no visible answer, run one bounded no-tool conclusion pass."
+        },
+        "return_reasoning": {
+          "type": "boolean",
+          "default": false,
+          "description": "Return DSH-visible DeepSeek reasoning chunks in addition to the final result."
+        },
+        "reasoning_max_chars": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 50000,
+          "default": 12000
+        },
+        "wait_for_completion": {
+          "type": "boolean",
+          "default": true,
+          "description": "False returns the native session id immediately; poll deepseek_flash_status for live progress."
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 1800,
+          "default": 1800
+        },
+        "max_requests": {
+          "type": "integer",
+          "minimum": -1,
+          "description": "Optional shared model-request limit; omit or -1 for no plugin count limit. Positive values enforce an explicitly chosen budget."
+        },
+        "max_total_output_tokens": {
+          "type": "integer",
+          "minimum": -1,
+          "description": "Optional cumulative output cap (reasoning plus visible text); omit or -1 for no plugin total cap. Finite values must be at least 64. Do not add a small cap merely to delegate work."
+        },
+        "max_total_input_tokens": {
+          "type": "integer",
+          "minimum": -1,
+          "description": "Optional cumulative input cap; omit or -1 for no plugin total cap. Finite limits reserve the provider context capacity for in-flight calls."
+        },
+        "max_concurrent_requests": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32,
+          "default": 4
+        },
+        "max_cost_micros": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000000,
+          "description": "Cost admission cap in micro-units of the administrator-configured pricing currency. Requires a trusted pricing registry; not an invoice guarantee."
+        },
+        "allow_external_writes": {
+          "type": "boolean",
+          "default": false,
+          "description": "Explicitly permit registered external-write tools selected in allowed_tools. Read-only policy still denies them."
+        },
+        "max_tool_calls_total": {
+          "type": "integer",
+          "minimum": -1,
+          "description": "Optional shared tool-call limit; omit or -1 for no count limit. 0 denies all tools."
+        },
+        "max_children_total": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 256,
+          "default": 16
+        },
+        "max_duration_seconds": {
+          "type": "integer",
+          "minimum": -1,
+          "maximum": 604800,
+          "description": "Optional deadline from original task creation; omit or -1 for no plugin deadline. Positive seconds cooperatively cancel generation/tools; not an OS kill boundary."
+        },
+        "allowed_tools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true,
+          "description": "Narrow built-in capabilities and explicitly select administrator-registered third-party tools. Unknown names never grant access."
+        },
+        "continue_until_answer": {
+          "type": "boolean",
+          "default": true,
+          "description": "Continue interrupted responses or preambles through the native task inbox until an answer or explicit blocker. User cancellation, errors, explicit budgets and repeated no-progress still stop the task."
+        },
+        "max_transcript_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000,
+          "default": 0,
+          "description": "Plugin continuation threshold. Set 0 to let native DSH compaction and the provider manage the context."
+        },
+        "request_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "description": "Submission idempotency key. Reuse the exact task, target and policy to retrieve the same receipt; use a new key for a genuinely new turn."
+        }
+      },
+      "required": [
+        "task"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  {
+    "name": "deepseek_flash_status",
+    "description": "Read the current state, final answer, and token/cache usage of a DeepSeek Flash subagent session.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "return_reasoning": {
+          "type": "boolean",
+          "default": false
+        },
+        "reasoning_max_chars": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 50000,
+          "default": 12000
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  {
+    "name": "deepseek_flash_stop",
+    "description": "Stop the active turn of a DeepSeek Flash subagent session.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  {
+    "name": "deepseek_lead",
+    "description": "Create or continue a persistent Codex Lead that may coordinate its own bounded DSH subagents for a larger project.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "task": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120000,
+          "description": "Project task for the Codex Lead."
+        },
+        "cwd": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Required workspace for a new Lead; validated when continuing."
+        },
+        "lead_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Continue an existing Codex Lead session."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+          "description": "Optional custom display name for a new Lead (Unicode supported, no control characters or blank-only names). Omit for Codex Lead N. Identity is persisted role metadata; continue by lead_id after renaming."
+        },
+        "permission": {
+          "type": "string",
+          "enum": [
+            "read-only",
+            "workspace-write",
+            "danger-full-access"
+          ],
+          "default": "read-only"
+        },
+        "reasoning_effort": {
+          "type": "string",
+          "enum": [
+            "off",
+            "low",
+            "high",
+            "max"
+          ],
+          "default": "high"
+        },
+        "max_output_tokens": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 393216,
+          "default": 393216
+        },
+        "unlimited_output_tokens": {
+          "type": "boolean",
+          "default": false
+        },
+        "max_tool_calls": {
+          "type": "integer",
+          "minimum": -1,
+          "description": "Optional per-turn tool-call limit. Omit or use -1 for no count limit. 0 disables every tool. Do not invent a small quota unless the user requests one."
+        },
+        "max_children": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16,
+          "default": 4
+        },
+        "child_policy": {
+          "type": "object",
+          "description": "Host-enforced policy for every native child created by this Lead. Defaults to Flash, read-only, no terminal, and no further delegation.",
+          "properties": {
+            "model": {
+              "type": "string",
+              "enum": [
+                "deepseek-flash",
+                "deepseek-v4-flash",
+                "deepseek-v4-pro"
+              ],
+              "default": "deepseek-flash",
+              "description": "Exact child model. Keep Flash unless the user explicitly requests Pro."
+            },
+            "permission": {
+              "type": "string",
+              "enum": [
+                "read-only",
+                "workspace-write",
+                "danger-full-access"
+              ],
+              "default": "read-only"
+            },
+            "reasoning_effort": {
+              "type": "string",
+              "enum": [
+                "off",
+                "low",
+                "high",
+                "max"
+              ],
+              "default": "high"
+            },
+            "max_output_tokens": {
+              "type": "integer",
+              "minimum": 64,
+              "maximum": 393216,
+              "default": 393216
+            },
+            "unlimited_output_tokens": {
+              "type": "boolean",
+              "default": false,
+              "description": "Use the host safety ceiling (393216), never an unbounded provider transcript."
+            },
+            "max_tool_calls": {
+              "type": "integer",
+              "minimum": -1,
+              "description": "Optional per-turn tool-call limit. Omit or use -1 for no count limit. 0 disables every tool. Do not invent a small quota unless the user requests one."
+            },
+            "allowed_tools": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "uniqueItems": true,
+              "description": "Narrow built-in capabilities and explicitly select administrator-registered third-party tools. Unknown names never grant access."
+            },
+            "allow_external_writes": {
+              "type": "boolean",
+              "default": false,
+              "description": "Explicitly permit registered external-write tools selected in allowed_tools. Read-only policy still denies them."
+            },
+            "continue_until_answer": {
+              "type": "boolean",
+              "default": true,
+              "description": "Continue interrupted responses or preambles through the native task inbox until an answer or explicit blocker. User cancellation, errors, explicit budgets and repeated no-progress still stop the task."
+            },
+            "allow_terminal": {
+              "type": "boolean",
+              "default": false,
+              "description": "Allow bash/pwsh/shell-style tools in Lead children. False removes and hard-blocks terminal execution."
+            }
+          },
+          "additionalProperties": false
+        },
+        "finalize_empty": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run at most one bounded no-tool conclusion pass when the Lead exhausts its budget without a visible final answer."
+        },
+        "return_reasoning": {
+          "type": "boolean",
+          "default": false
+        },
+        "reasoning_max_chars": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 50000,
+          "default": 12000
+        },
+        "wait_for_completion": {
+          "type": "boolean",
+          "default": true
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 3600,
+          "default": 3600
+        },
+        "max_requests": {
+          "type": "integer",
+          "minimum": -1,
+          "description": "Optional shared model-request limit; omit or -1 for no plugin count limit. Positive values enforce an explicitly chosen budget."
+        },
+        "max_total_output_tokens": {
+          "type": "integer",
+          "minimum": -1,
+          "description": "Optional cumulative output cap (reasoning plus visible text); omit or -1 for no plugin total cap. Finite values must be at least 64. Do not add a small cap merely to delegate work."
+        },
+        "max_total_input_tokens": {
+          "type": "integer",
+          "minimum": -1,
+          "description": "Optional cumulative input cap; omit or -1 for no plugin total cap. Finite limits reserve the provider context capacity for in-flight calls."
+        },
+        "max_concurrent_requests": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32,
+          "default": 4
+        },
+        "max_cost_micros": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000000,
+          "description": "Cost admission cap in micro-units of the administrator-configured pricing currency. Requires a trusted pricing registry; not an invoice guarantee."
+        },
+        "allow_external_writes": {
+          "type": "boolean",
+          "default": false,
+          "description": "Explicitly permit registered external-write tools selected in allowed_tools. Read-only policy still denies them."
+        },
+        "max_tool_calls_total": {
+          "type": "integer",
+          "minimum": -1,
+          "description": "Optional shared tool-call limit; omit or -1 for no count limit. 0 denies all tools."
+        },
+        "max_children_total": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 256,
+          "default": 16
+        },
+        "max_duration_seconds": {
+          "type": "integer",
+          "minimum": -1,
+          "maximum": 604800,
+          "description": "Optional deadline from original task creation; omit or -1 for no plugin deadline. Positive seconds cooperatively cancel generation/tools; not an OS kill boundary."
+        },
+        "allowed_tools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true,
+          "description": "Narrow built-in capabilities and explicitly select administrator-registered third-party tools. Unknown names never grant access."
+        },
+        "continue_until_answer": {
+          "type": "boolean",
+          "default": true,
+          "description": "Continue interrupted responses or preambles through the native task inbox until an answer or explicit blocker. User cancellation, errors, explicit budgets and repeated no-progress still stop the task."
+        },
+        "max_transcript_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000,
+          "default": 0,
+          "description": "Plugin continuation threshold. Set 0 to let native DSH compaction and the provider manage the context."
+        },
+        "allow_terminal": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow terminal tools for the Lead itself. False removes and blocks them; child_policy controls children separately."
+        },
+        "request_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "description": "Submission idempotency key. Reuse the exact task, target and policy to retrieve the same receipt; use a new key for a genuinely new turn."
+        }
+      },
+      "required": [
+        "task"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  {
+    "name": "deepseek_lead_policy_update",
+    "description": "Hot-update an existing Codex Lead and its future child-agent policy without starting a new model turn.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "lead_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cwd": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional workspace assertion for the existing Lead."
+        },
+        "permission": {
+          "type": "string",
+          "enum": [
+            "read-only",
+            "workspace-write",
+            "danger-full-access"
+          ],
+          "default": "read-only"
+        },
+        "reasoning_effort": {
+          "type": "string",
+          "enum": [
+            "off",
+            "low",
+            "high",
+            "max"
+          ],
+          "default": "high"
+        },
+        "max_output_tokens": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 393216,
+          "default": 393216
+        },
+        "unlimited_output_tokens": {
+          "type": "boolean",
+          "default": false
+        },
+        "max_tool_calls": {
+          "type": "integer",
+          "minimum": -1,
+          "description": "Optional per-turn tool-call limit. Omit or use -1 for no count limit. 0 disables every tool. Do not invent a small quota unless the user requests one."
+        },
+        "max_children": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16,
+          "default": 4
+        },
+        "child_policy": {
+          "type": "object",
+          "description": "Host-enforced policy for every native child created by this Lead. Defaults to Flash, read-only, no terminal, and no further delegation.",
+          "properties": {
+            "model": {
+              "type": "string",
+              "enum": [
+                "deepseek-flash",
+                "deepseek-v4-flash",
+                "deepseek-v4-pro"
+              ],
+              "default": "deepseek-flash",
+              "description": "Exact child model. Keep Flash unless the user explicitly requests Pro."
+            },
+            "permission": {
+              "type": "string",
+              "enum": [
+                "read-only",
+                "workspace-write",
+                "danger-full-access"
+              ],
+              "default": "read-only"
+            },
+            "reasoning_effort": {
+              "type": "string",
+              "enum": [
+                "off",
+                "low",
+                "high",
+                "max"
+              ],
+              "default": "high"
+            },
+            "max_output_tokens": {
+              "type": "integer",
+              "minimum": 64,
+              "maximum": 393216,
+              "default": 393216
+            },
+            "unlimited_output_tokens": {
+              "type": "boolean",
+              "default": false,
+              "description": "Use the host safety ceiling (393216), never an unbounded provider transcript."
+            },
+            "max_tool_calls": {
+              "type": "integer",
+              "minimum": -1,
+              "description": "Optional per-turn tool-call limit. Omit or use -1 for no count limit. 0 disables every tool. Do not invent a small quota unless the user requests one."
+            },
+            "allowed_tools": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "uniqueItems": true,
+              "description": "Narrow built-in capabilities and explicitly select administrator-registered third-party tools. Unknown names never grant access."
+            },
+            "allow_external_writes": {
+              "type": "boolean",
+              "default": false,
+              "description": "Explicitly permit registered external-write tools selected in allowed_tools. Read-only policy still denies them."
+            },
+            "continue_until_answer": {
+              "type": "boolean",
+              "default": true,
+              "description": "Continue interrupted responses or preambles through the native task inbox until an answer or explicit blocker. User cancellation, errors, explicit budgets and repeated no-progress still stop the task."
+            },
+            "allow_terminal": {
+              "type": "boolean",
+              "default": false,
+              "description": "Allow bash/pwsh/shell-style tools in Lead children. False removes and hard-blocks terminal execution."
+            }
+          },
+          "additionalProperties": false
+        },
+        "finalize_empty": {
+          "type": "boolean",
+          "default": true
+        },
+        "max_requests": {
+          "type": "integer",
+          "minimum": -1,
+          "description": "Optional shared model-request limit; omit or -1 for no plugin count limit. Positive values enforce an explicitly chosen budget."
+        },
+        "max_total_output_tokens": {
+          "type": "integer",
+          "minimum": -1,
+          "description": "Optional cumulative output cap (reasoning plus visible text); omit or -1 for no plugin total cap. Finite values must be at least 64. Do not add a small cap merely to delegate work."
+        },
+        "max_total_input_tokens": {
+          "type": "integer",
+          "minimum": -1,
+          "description": "Optional cumulative input cap; omit or -1 for no plugin total cap. Finite limits reserve the provider context capacity for in-flight calls."
+        },
+        "max_concurrent_requests": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32,
+          "default": 4
+        },
+        "max_cost_micros": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000000,
+          "description": "Cost admission cap in micro-units of the administrator-configured pricing currency. Requires a trusted pricing registry; not an invoice guarantee."
+        },
+        "allow_external_writes": {
+          "type": "boolean",
+          "default": false,
+          "description": "Explicitly permit registered external-write tools selected in allowed_tools. Read-only policy still denies them."
+        },
+        "max_tool_calls_total": {
+          "type": "integer",
+          "minimum": -1,
+          "description": "Optional shared tool-call limit; omit or -1 for no count limit. 0 denies all tools."
+        },
+        "max_children_total": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 256,
+          "default": 16
+        },
+        "max_duration_seconds": {
+          "type": "integer",
+          "minimum": -1,
+          "maximum": 604800,
+          "description": "Optional deadline from original task creation; omit or -1 for no plugin deadline. Positive seconds cooperatively cancel generation/tools; not an OS kill boundary."
+        },
+        "allowed_tools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true,
+          "description": "Narrow built-in capabilities and explicitly select administrator-registered third-party tools. Unknown names never grant access."
+        },
+        "allow_terminal": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow terminal tools for the Lead itself. False removes and blocks them; child_policy controls children separately."
+        }
+      },
+      "required": [
+        "lead_id"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  {
+    "name": "deepseek_lead_status",
+    "description": "Read a Codex Lead result, token/cache usage, and its direct DSH child-agent results.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "lead_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "return_reasoning": {
+          "type": "boolean",
+          "default": false
+        },
+        "reasoning_max_chars": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 50000,
+          "default": 12000
+        },
+        "include_children": {
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "required": [
+        "lead_id"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  {
+    "name": "deepseek_lead_list",
+    "description": "List persistent Codex Lead sessions, optionally limited to one workspace.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "cwd": {
+          "type": "string",
+          "minLength": 1
+        },
+        "include_archived": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  {
+    "name": "deepseek_lead_stop",
+    "description": "Stop a running Codex Lead turn and close its task lease.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "lead_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "lead_id"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  {
+    "name": "deepseek_session_archive",
+    "description": "Archive one settled session, or explicitly restore its archive status. Native archive blocks subagent descendants. Restore changes only the named session and never prompts or replays work.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "archive",
+            "restore"
+          ],
+          "default": "archive"
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  {
+    "name": "deepseek_tasks_wait",
+    "description": "Wait for existing DSH sessions and their descendants. Read-only: never resumes agents or creates messages. A timeout returns pending IDs, not completion.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "session_ids"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "session_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 60,
+          "default": 30
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  {
+    "name": "deepseek_task_result",
+    "description": "Read the current result in bounded pages, including partial output and an exact turn identity. Does not run a model or mutate the session.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "session_id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32000,
+          "default": 12000
+        },
+        "expected_turn": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Reject if the session advanced since the previous page."
+        },
+        "expected_revision": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "Result revision from the previous page; detects live text changes."
+        },
+        "include_task": {
+          "type": "boolean",
+          "default": false,
+          "description": "Include the original submitted task and effective policy. Does not read unrelated parent conversations."
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  {
+    "name": "deepseek_tasks_list",
+    "description": "List managed Direct, Lead and child tasks without creating or waking sessions.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "cwd": {
+          "type": "string",
+          "minLength": 1
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200,
+          "default": 50
+        },
+        "include_archived": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  {
+    "name": "deepseek_task_tree",
+    "description": "Read the full durable task family, including archived/missing children, exact receipt/turn IDs and recovery state. Does not wake, reconcile or execute any agent.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "receipt_offset": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  {
+    "name": "deepseek_task_cancel",
+    "description": "Request cancellation of a managed task, optionally including descendants. Cancellation acknowledgement is not proof of quiescence; wait afterward.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "self",
+            "tree"
+          ],
+          "default": "tree"
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  {
+    "name": "deepseek_tasks_start",
+    "description": "Start up to eight independent Direct tasks and return their handles. Each item must have a stable request_key. Partial batch failures do not replay successful items. Join with deepseek_tasks_wait.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "tasks": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "properties": {
+              "task": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120000,
+                "description": "Self-contained task for the DeepSeek Flash subagent."
+              },
+              "cwd": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Workspace directory. Defaults to the desktop app workspace."
+              },
+              "session_id": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Continue a previous native DSH child agent."
+              },
+              "permission": {
+                "type": "string",
+                "enum": [
+                  "read-only",
+                  "workspace-write",
+                  "danger-full-access"
+                ],
+                "default": "read-only"
+              },
+              "reasoning_effort": {
+                "type": "string",
+                "enum": [
+                  "off",
+                  "low",
+                  "high",
+                  "max"
+                ],
+                "default": "high"
+              },
+              "max_output_tokens": {
+                "type": "integer",
+                "minimum": 64,
+                "maximum": 393216,
+                "default": 393216,
+                "description": "Per-model-request reasoning plus visible-output cap, not the task total. Defaults to the provider maximum. Omit unless the user needs a specific per-response limit."
+              },
+              "unlimited_output_tokens": {
+                "type": "boolean",
+                "default": false,
+                "description": "Use the host safety ceiling (393216); it is not truly unbounded. Cannot be combined with max_output_tokens."
+              },
+              "max_tool_calls": {
+                "type": "integer",
+                "minimum": -1,
+                "description": "Optional per-turn tool-call limit. Omit or use -1 for no count limit. 0 disables every tool. Do not invent a small quota unless the user requests one."
+              },
+              "allow_terminal": {
+                "type": "boolean",
+                "default": false,
+                "description": "Expose pwsh/bash to this child. False removes it before the model request and also blocks execution."
+              },
+              "finalize_empty": {
+                "type": "boolean",
+                "default": true,
+                "description": "If reasoning exhausts the budget with no visible answer, run one bounded no-tool conclusion pass."
+              },
+              "return_reasoning": {
+                "type": "boolean",
+                "default": false,
+                "description": "Return DSH-visible DeepSeek reasoning chunks in addition to the final result."
+              },
+              "reasoning_max_chars": {
+                "type": "integer",
+                "minimum": 1000,
+                "maximum": 50000,
+                "default": 12000
+              },
+              "wait_for_completion": {
+                "type": "boolean",
+                "default": true,
+                "description": "False returns the native session id immediately; poll deepseek_flash_status for live progress."
+              },
+              "timeout_seconds": {
+                "type": "integer",
+                "minimum": 5,
+                "maximum": 1800,
+                "default": 1800
+              },
+              "max_requests": {
+                "type": "integer",
+                "minimum": -1,
+                "description": "Optional shared model-request limit; omit or -1 for no plugin count limit. Positive values enforce an explicitly chosen budget."
+              },
+              "max_total_output_tokens": {
+                "type": "integer",
+                "minimum": -1,
+                "description": "Optional cumulative output cap (reasoning plus visible text); omit or -1 for no plugin total cap. Finite values must be at least 64. Do not add a small cap merely to delegate work."
+              },
+              "max_total_input_tokens": {
+                "type": "integer",
+                "minimum": -1,
+                "description": "Optional cumulative input cap; omit or -1 for no plugin total cap. Finite limits reserve the provider context capacity for in-flight calls."
+              },
+              "max_concurrent_requests": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 32,
+                "default": 4
+              },
+              "max_cost_micros": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000000000,
+                "description": "Cost admission cap in micro-units of the administrator-configured pricing currency. Requires a trusted pricing registry; not an invoice guarantee."
+              },
+              "allow_external_writes": {
+                "type": "boolean",
+                "default": false,
+                "description": "Explicitly permit registered external-write tools selected in allowed_tools. Read-only policy still denies them."
+              },
+              "max_tool_calls_total": {
+                "type": "integer",
+                "minimum": -1,
+                "description": "Optional shared tool-call limit; omit or -1 for no count limit. 0 denies all tools."
+              },
+              "max_children_total": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 256,
+                "default": 16
+              },
+              "max_duration_seconds": {
+                "type": "integer",
+                "minimum": -1,
+                "maximum": 604800,
+                "description": "Optional deadline from original task creation; omit or -1 for no plugin deadline. Positive seconds cooperatively cancel generation/tools; not an OS kill boundary."
+              },
+              "allowed_tools": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "uniqueItems": true,
+                "description": "Narrow built-in capabilities and explicitly select administrator-registered third-party tools. Unknown names never grant access."
+              },
+              "continue_until_answer": {
+                "type": "boolean",
+                "default": true,
+                "description": "Continue interrupted responses or preambles through the native task inbox until an answer or explicit blocker. User cancellation, errors, explicit budgets and repeated no-progress still stop the task."
+              },
+              "max_transcript_tokens": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1000000,
+                "default": 0,
+                "description": "Plugin continuation threshold. Set 0 to let native DSH compaction and the provider manage the context."
+              },
+              "request_key": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160,
+                "description": "Submission idempotency key. Reuse the exact task, target and policy to retrieve the same receipt; use a new key for a genuinely new turn."
+              }
+            },
+            "required": [
+              "task",
+              "cwd",
+              "request_key"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "tasks"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  {
+    "name": "deepseek_capabilities",
+    "description": "Inspect actual DSH plugin tools, pinned schemas and effective task permissions. Read-only; never wakes an agent, grants capabilities, executes tools or imports Codex-only plugins. A cold session returns unknown availability.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "tool_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      },
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  {
+    "name": "deepseek_watch",
+    "description": "Persist a zero-model periodic task report in the DSH runtime. This does not itself wake Codex; use an explicitly authorized host heartbeat to consume notifications.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "watch_id": {
+          "type": "string",
+          "pattern": "^watch-[a-zA-Z0-9_-]{1,100}$",
+          "maxLength": 160
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "start",
+            "stop",
+            "status"
+          ]
+        },
+        "session_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(?!__proto__$|constructor$|prototype$)[a-zA-Z0-9_-]{1,160}$",
+            "maxLength": 160
+          },
+          "uniqueItems": true,
+          "minItems": 1,
+          "maxItems": 32
+        },
+        "interval_seconds": {
+          "type": "integer",
+          "minimum": 60,
+          "maximum": 86400
+        },
+        "duration_seconds": {
+          "type": "integer",
+          "minimum": 60,
+          "maximum": 604800
+        }
+      },
+      "required": [
+        "watch_id",
+        "action"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "deepseek_notifications",
+    "description": "Read durable bounded reports, replay after disconnection, or list channels. Reading never acknowledges or generates model calls. Check gap before consuming.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "channel": {
+          "type": "string",
+          "pattern": "^(?!__proto__$|constructor$|prototype$)[a-zA-Z0-9_-]{1,160}$",
+          "maxLength": 160
+        },
+        "consumer": {
+          "type": "string",
+          "pattern": "^(?!__proto__$|constructor$|prototype$)[a-zA-Z0-9_-]{1,160}$",
+          "maxLength": 160
+        },
+        "after_seq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "deepseek_notifications_ack",
+    "description": "Acknowledge through a sequence ONLY after its report has been delivered. Cursor is per consumer; no task is cancelled or resumed.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "channel": {
+          "type": "string",
+          "pattern": "^(?!__proto__$|constructor$|prototype$)[a-zA-Z0-9_-]{1,160}$",
+          "maxLength": 160
+        },
+        "consumer": {
+          "type": "string",
+          "pattern": "^(?!__proto__$|constructor$|prototype$)[a-zA-Z0-9_-]{1,160}$",
+          "maxLength": 160
+        },
+        "through_seq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "channel",
+        "consumer",
+        "through_seq"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "deepseek_schedule_create",
+    "description": "Authorize native DSH to continue an existing root Lead at a specified time or recurring interval. Captures its current policy and retains its cumulative budget; cannot target a child. Requires an explicit user scheduling request. Backend must be running; no Codex timer is created.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "lead_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "task": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "request_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "at": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "Absolute RFC3339 instant with Z or explicit UTC offset; never infer a timezone."
+        },
+        "local_at": {
+          "type": "object",
+          "properties": {
+            "date": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 10
+            },
+            "time": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32
+            },
+            "time_zone": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            }
+          },
+          "required": [
+            "date",
+            "time",
+            "time_zone"
+          ],
+          "additionalProperties": false
+        },
+        "after_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 31536000
+        },
+        "every_seconds": {
+          "type": "integer",
+          "minimum": 60,
+          "maximum": 31536000
+        },
+        "daily": {
+          "type": "object",
+          "properties": {
+            "time": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32
+            },
+            "time_zone": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            }
+          },
+          "required": [
+            "time",
+            "time_zone"
+          ],
+          "additionalProperties": false
+        },
+        "weekly": {
+          "type": "object",
+          "properties": {
+            "time": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32
+            },
+            "time_zone": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "weekdays": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 7,
+              "uniqueItems": true,
+              "items": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 7
+              }
+            }
+          },
+          "required": [
+            "time",
+            "time_zone",
+            "weekdays"
+          ],
+          "additionalProperties": false
+        },
+        "cron": {
+          "type": "object",
+          "properties": {
+            "expression": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "time_zone": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            }
+          },
+          "required": [
+            "expression",
+            "time_zone"
+          ],
+          "additionalProperties": false
+        },
+        "expires_at": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "Absolute RFC3339 end of authorization (explicit Z/offset). No admission or continued execution at/after it."
+        },
+        "max_lateness_seconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 31536000,
+          "default": 300,
+          "description": "Maximum admission delay after each native occurrence, default 300 seconds. Late occurrences are consumed as expired, never replayed."
+        }
+      },
+      "required": [
+        "lead_id",
+        "title",
+        "task",
+        "request_key"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  {
+    "name": "deepseek_schedule_list",
+    "description": "Read Collab-owned native DSH schedules, next delivery, and execution states without waking a Lead. Does not list or alter Codex reminders.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "lead_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  {
+    "name": "deepseek_schedule_update",
+    "description": "Compare-and-update a Collab native schedule. Get revision from list first. Explicit refresh_policy re-authorizes the current Lead policy; otherwise policy changes block future execution. An inactive one-shot needs a new create, not replay.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "lead_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "schedule_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "expected_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "request_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "task": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "refresh_policy": {
+          "type": "boolean"
+        },
+        "at": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "Absolute RFC3339 instant with Z or explicit UTC offset; never infer a timezone."
+        },
+        "local_at": {
+          "type": "object",
+          "properties": {
+            "date": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 10
+            },
+            "time": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32
+            },
+            "time_zone": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            }
+          },
+          "required": [
+            "date",
+            "time",
+            "time_zone"
+          ],
+          "additionalProperties": false
+        },
+        "every_seconds": {
+          "type": "integer",
+          "minimum": 60,
+          "maximum": 31536000
+        },
+        "daily": {
+          "type": "object",
+          "properties": {
+            "time": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32
+            },
+            "time_zone": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            }
+          },
+          "required": [
+            "time",
+            "time_zone"
+          ],
+          "additionalProperties": false
+        },
+        "weekly": {
+          "type": "object",
+          "properties": {
+            "time": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32
+            },
+            "time_zone": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "weekdays": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 7,
+              "uniqueItems": true,
+              "items": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 7
+              }
+            }
+          },
+          "required": [
+            "time",
+            "time_zone",
+            "weekdays"
+          ],
+          "additionalProperties": false
+        },
+        "cron": {
+          "type": "object",
+          "properties": {
+            "expression": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "time_zone": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            }
+          },
+          "required": [
+            "expression",
+            "time_zone"
+          ],
+          "additionalProperties": false
+        },
+        "expires_at": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "Absolute RFC3339 end of authorization (explicit Z/offset). No admission or continued execution at/after it."
+        },
+        "max_lateness_seconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 31536000,
+          "default": 300,
+          "description": "Maximum admission delay after each native occurrence, default 300 seconds. Late occurrences are consumed as expired, never replayed."
+        }
+      },
+      "required": [
+        "lead_id",
+        "schedule_id",
+        "expected_revision",
+        "request_key"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  {
+    "name": "deepseek_schedule_delete",
+    "description": "Cancel a Collab native schedule and reject its not-yet-admitted queued deliveries. An already running Lead is NOT interrupted; use task_cancel separately if authorized. Keeps bounded execution audit, not native delivery history.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "lead_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "schedule_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        }
+      },
+      "required": [
+        "lead_id",
+        "schedule_id"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  {
+    "name": "deepseek_schedule_history",
+    "description": "Read bounded execution audit plus native delivery receipts. Delivery acknowledgement is not execution success. Unknown outcomes after a crash are never blindly replayed.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "lead_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "schedule_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "before": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        }
+      },
+      "required": [
+        "lead_id",
+        "schedule_id"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  {
+    "name": "deepseek_task_reconcile",
+    "description": "Inspect or recover an interrupted task in the same session, preserving completed children, native history, files and cumulative budgets. Recover prepares safe continuation without model execution or replay; unknown side effects require verified tool_resolutions. Abandon is only for explicitly unwanted work, never required for ordinary recovery.",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "session_id"
+      ],
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]{1,160}$"
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "inspect",
+            "recover",
+            "abandon"
+          ],
+          "default": "inspect"
+        },
+        "expected_digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "request_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "tool_resolutions": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "session_id",
+              "call_id",
+              "outcome",
+              "evidence"
+            ],
+            "properties": {
+              "session_id": {
+                "type": "string",
+                "pattern": "^[a-zA-Z0-9_-]{1,160}$"
+              },
+              "call_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "verified-completed",
+                  "verified-not-executed"
+                ]
+              },
+              "evidence": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              }
+            }
+          }
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "deepseek_task_trace",
+    "description": "Read native visible execution history: user tasks, intermediate assistant output, tool inputs/results and turn endings. Read-only, no wakeup or reasoning disclosure. Uses a stable sequence cursor; long individual records have explicit text offsets.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "session_id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "before_seq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "through_seq": {
+          "type": "integer",
+          "minimum": -1
+        },
+        "max_messages": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        },
+        "event_seq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32000
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+]

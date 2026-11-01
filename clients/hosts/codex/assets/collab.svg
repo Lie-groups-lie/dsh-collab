@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="DSH Collab">
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="#303059"/>
+  <g fill="none" stroke-linecap="round" stroke-width="5">
+    <path d="M15 17h6c10 0 12 15 22 15h6" stroke="#FFBE83"/>
+    <path d="M15 47h6c10 0 12-15 22-15h6" stroke="#C7C5FF"/>
+  </g>
+  <circle cx="49" cy="32" r="5" fill="#FFFFFF"/>
+</svg>

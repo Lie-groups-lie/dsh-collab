@@ -1,0 +1,16 @@
+{
+  "name": "dsh-codex-collab",
+  "version": "0.4.0-rc.2",
+  "description": "Managed DSH collaboration through the local Runtime.",
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "DSH Collab",
+    "shortDescription": "Direct Flash agents and persistent project Leads",
+    "developerName": "DSH Collab contributors",
+    "brandColor": "#303059",
+    "composerIcon": "./assets/collab.svg",
+    "logo": "./assets/collab.svg",
+    "logoDark": "./assets/collab.svg"
+  }
+}
