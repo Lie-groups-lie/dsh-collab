@@ -1,4 +1,4 @@
-# DSH Collab: Download, Install and Use
+# DSH Collab: Let Codex and Cloude Code contral dsh 
 
 [简体中文](README.md) · **English**
 
