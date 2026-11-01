@@ -1,4 +1,4 @@
-# DSH Collab：下载、安装与使用
+# DSH Collab：让codex和cloude code 操控dsh
 
 **简体中文** · [English](README.en.md)
 
