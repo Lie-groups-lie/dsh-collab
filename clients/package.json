@@ -1,6 +1,6 @@
 {
   "name": "dsh-collab-clients",
-  "version": "0.4.0-rc.2",
+  "version": "0.4.0-rc.4",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -9,6 +9,7 @@
     "node": ">=22.19.0"
   },
   "files": [
+    "setup.mjs",
     "lib/",
     "mcp/",
     "hosts/",

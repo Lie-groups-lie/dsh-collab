@@ -1,29 +1,51 @@
 import fs from 'node:fs';
-import path from 'node:path';
-import os from 'node:os';
+import { runtimeCandidates } from './discovery.mjs';
 
 // Read only the discovery pointer. The client never opens the task/fee database,
 // owns a runtime, or retries a potentially accepted submission.
-export function readRuntime(env = process.env) {
-  const explicit = env.DSH_DESKTOP_RUNTIME_FILE;
-  const files = explicit ? [explicit] : [
-    path.join(env.APPDATA || path.join(os.homedir(), '.config'), 'DeepSeek Harness', 'runtime.json'),
-    path.join(process.cwd(), '.dsh-desktop', 'runtime.json'),
-  ];
-  const found = files.flatMap(file => {
+function scanRuntimeRecords(env, options) {
+  const records = [];
+  const found = runtimeCandidates(env, options).flatMap((file, candidate) => {
     try {
+      const stat = fs.statSync(file);
+      if (!stat.isFile() || stat.size > 1024 * 1024) { records.push({ candidate, state: 'invalid-record' }); return []; }
       const r = JSON.parse(fs.readFileSync(file, 'utf8'));
       if (r.controlUrl) { r.url = r.controlUrl; r.launchUrl = r.controlLaunchUrl; }
       const url = new URL(r.url), launch = new URL(r.launchUrl);
       if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || !url.port || url.pathname !== '/'
         || url.username || url.password || url.search || url.hash || launch.origin !== url.origin || launch.pathname !== '/'
-        || launch.username || launch.password || !launch.searchParams.get('token')) return [];
-      return [{ ...r, runtimeFile: file, modified: fs.statSync(file).mtimeMs }];
-    } catch { return []; }
+        || launch.username || launch.password || !launch.searchParams.get('token')) { records.push({ candidate, state: 'invalid-record' }); return []; }
+      records.push({ candidate, state: r.localControlApi === 2 ? 'valid-record' : 'incompatible-control-api' });
+      return [{ ...r, runtimeFile: file, modified: stat.mtimeMs, discoveryCandidate: candidate }];
+    } catch (error) { records.push({ candidate, state: error.code === 'ENOENT' ? 'missing' : ['EACCES', 'EPERM'].includes(error.code) ? 'unreadable' : 'invalid-record' }); return []; }
   }).sort((a, b) => b.modified - a.modified);
-  if (!found.length) throw new Error('DSH_DISCOVERY_MISSING: start the configured DSH host; no runtime was started or request replayed.');
+  return { found, records };
+}
+
+// Safe to paste into an issue: no paths, URLs, credentials, PID or session data.
+// Valid discovery does NOT establish process liveness or authentication success.
+export function inspectConnection(env = process.env, options) {
+  const { found, records } = scanRuntimeRecords(env, options), selected = found.length === 1 ? found[0] : null;
+  return { schema: 1, mode: 'offline-discovery-only', explicitSelection: Boolean(env.DSH_DESKTOP_RUNTIME_FILE),
+    records, selectedCandidate: selected?.discoveryCandidate ?? null,
+    discoveryValid: found.length > 0, controlCompatible: selected ? selected.localControlApi === 2 : null,
+    multipleRecords: found.length > 1, reachable: null, authenticated: null, modelCalls: 0,
+    nextAction: found.length > 1 ? 'Multiple valid records exist. Set DSH_DESKTOP_RUNTIME_FILE explicitly before submitting work; no host was selected.' : !selected
+      ? records.some(r => r.state !== 'missing') ? 'Inspect the selected connection record format and local file permissions. No alternate host was started.' : 'Configure the active DSH profile to publish a connection record; both sides must select the same path.'
+      : selected.localControlApi !== 2 ? 'The selected native Runtime control API is incompatible; this client requires 2. Update only in an idle maintenance window.'
+      : 'Discovery is readable. Use the registered deepseek_runtime_status tool to check the live connection; no task has been submitted.' };
+}
+
+export function readRuntime(env = process.env, options) {
+  const { found, records } = scanRuntimeRecords(env, options);
+  if (!found.length) {
+    if (records.some(record => record.state === 'unreadable')) throw new Error('DSH_DISCOVERY_UNREADABLE: connection record cannot be read; inspect file permissions. No runtime started or request replayed.');
+    if (records.some(record => record.state === 'invalid-record')) throw new Error('DSH_DISCOVERY_INVALID: connection record exists but is malformed, unsafe or oversized; check the configured instance. No runtime started or request replayed.');
+    throw new Error('DSH_DISCOVERY_MISSING: start the configured DSH host; no runtime was started or request replayed.');
+  }
+  if (found.length > 1) throw new Error('DSH_DISCOVERY_AMBIGUOUS: multiple valid connection records exist. Set DSH_DESKTOP_RUNTIME_FILE to the intended instance; no host was selected or task submitted.');
   const runtime = found[0];
-  if (runtime.localControlApi !== 2) throw new Error(`DSH_CONTROL_VERSION: runtime control API ${runtime.localControlApi ?? 'missing'} is older/incompatible; client requires 2. Update the native Runtime when idle, not the window settings.`);
+  if (runtime.localControlApi !== 2) throw new Error('DSH_CONTROL_VERSION: selected native Runtime control API is incompatible; client requires 2. Update the native Runtime when idle, not the window settings.');
   return runtime;
 }
 

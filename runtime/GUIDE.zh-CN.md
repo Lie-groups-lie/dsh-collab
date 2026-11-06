@@ -6,7 +6,72 @@
 
 Collab 是第三方插件，与 DeepSeek、OpenAI、Anthropic 无隶属关系。任务在你已有的 DSH 中运行。数学研究扩展 Research 还在开发，本次下载不包含它。
 
-**dsh-collab 0.4.0-rc.2 · Windows x64 · MIT**。项目代码和原创分支图标采用 MIT 许可证。下载包附有完整许可文本，随包的 `ws` 另附上游版权和许可证。
+**dsh-collab 0.4.0-rc.4 · Windows x64；macOS/Linux 候选适配 · MIT**。项目代码和原创分支图标采用 MIT 许可证。下载包附有完整许可文本，随包的 `ws` 另附上游版权和许可证。Ubuntu WSL 的候选本地安装和连接已验证；macOS 实机和各桌面 UI 验收仍需单独完成。
+
+rc.4 新增交付证据与恢复预演，并保留派发前预检、精简回执和分层连接诊断，默认完整档位为 30 个工具。Runtime 与 Clients 应使用同一版本；rc.2 不支持全部新接口。
+
+候选的 `deepseek_task_preflight` 接收 `kind`（`direct` 或 `lead`）、绝对 `cwd` 和 `policy`（与派发相同的权限/预算字段）。只检查新任务的策略冲突；不会创建会话、调用模型或授予权限。MCP 入口仍需要已经连接的 Runtime；它不检查已有会话、剩余额度、实际模型或原生工具可用性。不要用预检代替续跑前的核验。
+
+完全离线排查连接时，在解压的 Clients 目录运行 `node lib/diagnostics.mjs`。报告区分缺失、无效、不可读取和控制接口不兼容；不打印路径、端点、凭据或会话内容。多个有效记录会阻止自动选择，需用 `DSH_DESKTOP_RUNTIME_FILE` 指定目标记录；诊断不会替你重启或换后台。
+
+候选还支持可选的 `DSH_COLLAB_TOOL_PROFILE=core`（15 个工具），默认仍为 full。core 不包含预检、调度、通知与策略等接口，需要这些流程时应使用 full。工具描述压缩保留全部预算和权限字段，不缩减执行额度。
+
+新版候选 Clients 默认使用精简回执 `response_detail: "compact"`，保留答案、不同于答案的 partial、准确 ID、警告、权限与用量汇总；逐请求账本 ID、工具和活动列表按需读取。`receiptView.refs` 表示与指定字段完全相同，不表示额外授权。`response_detail: "full"` 可取原始明细，轨迹仍用 trace 分页读取，DSH 界面与持久记录不变。
+
+宿主若占用 `session_id`，使用工具 schema 中的新别名 `task_session_id`；两者同时提供必须相同。状态/结果读取可将上次 `responseRevision` 传入 `if_response_revision`，未变化时返回 `unchanged: true`，继续使用已有结果，不代表空答案。此判断每次仍读取 Runtime，不用于派发或跳过准入。等待优先用 `deepseek_tasks_wait`，结束后分页取结果，不要重新提交原任务来查状态。这些选项只适用于已经加载新版 Clients 的工具。
+
+## 交付证据与恢复预演
+
+在任务详情打开“交付”或“恢复预演”。页面按需读取，不调用模型。点击下载才会导出 JSON；其中可能包含敏感的任务标题、标识和相对路径，分享前请检查。
+
+- `deepseek_task_evidence({session_id})` 汇总当前任务树的回执（最多 64 个任务）、已保留可见结果的哈希、所选会话的有限执行尾部，以及只计算一次的共享累计用量。这是带读取入口的证据清单，不是完整历史 transcript，也不是提供方账单。缺失用量和覆盖不完整会明确标记。
+- 可选 `artifact_paths: ["reports/result.json"]` 只计算指定工作区文件的当前哈希：最多 20 个路径、单文件 16 MiB、总计 64 MiB。使用以 / 分隔的相对路径，拒绝越界、符号链接和硬链接；不导出文件正文。哈希不能证明文件由哪个任务写出，也不能证明测试通过。
+- `deepseek_recovery_preview({session_id})` 只检查保留分支、中断回执、未知副作用和有效截止时间，不执行恢复、不放弃任务、不重置用量、不重试操作。未知写入仍需核验，不以继续读取代替确认副作用。
+- 明确点击“准备原会话续接”后才会进入回执恢复，后端核对证据摘要是否仍有效。保留已结算子任务和费用，不启动模型；之后由调用方向原会话提交剩余工作。记录变化、运行中的任务、过期截止或原生阻碍会阻止准备，预演不会覆盖权限。
+
+“回执已结算”和“交付已验收”分开显示；本导出器始终将验收标为“尚未验证”。数学正确性必须另行核验。两个新工具属于 full 档位，不加入精简 core 档位。不会自动上传证据。
+
+## 统一安装与诊断入口
+
+先按下文将 DSH 端装入现有 profile：插件管理器输入 `dsh-codex-collab@0.4.0-rc.4`，或安装同版本 Runtime TGZ。再解压对应系统的 Clients TGZ 到固定位置，在其 `package` 目录的终端运行：
+
+```sh
+node setup.mjs install codex
+node setup.mjs install claude
+node setup.mjs doctor
+node setup.mjs doctor --live
+```
+
+`install` 默认展示针对实际目录生成的安装步骤和连接路径；加 `--apply` 后通过宿主 CLI 注册市场并安装。CLI 不在 PATH 时加 `--cli /absolute/path/to/executable`。同名市场指向其他目录时停止并给出原因，不替换正在使用的来源。它不会卸载已有插件、添加权限白名单、重启 DSH 或 Codex。DSH 端仍由各宿主的插件管理器管理，连接发现配置见下文。
+
+`doctor` 离线检查；`--live` 额外认证并只读查询后台健康状态，区分认证失败、后台不可达和版本契约不匹配。输出可用于问题反馈，不含端点、凭据或会话正文。通过不代表当前聊天已经加载 MCP，也不代表付费模型验收通过；最后应在目标宿主内调用 `deepseek_runtime_status`。
+
+## macOS / Linux 候选包
+
+使用 `dsh-collab-posix-0.4.0-rc.4.tar.gz`，其中包含 `runtime-posix` 和 `clients-posix` 两个 TGZ。连接插件通过系统 Node 启动，不执行 Windows `.exe`；需要宿主进程 PATH 中有 Node.js 22.19 或更高版本。Apple Silicon 和 Intel 使用同一份 JavaScript 包及各自系统的 Node，尚无本机实测结论。
+
+解压 Clients TGZ 到固定目录，例如 `/absolute/path/clients/package`。在终端执行：
+
+```sh
+codex plugin marketplace add /absolute/path/clients/package
+codex plugin add dsh-codex-collab@dsh-collab-clients
+```
+
+Claude Code 对话框中执行：
+
+```text
+/plugin marketplace add /absolute/path/clients/package
+/plugin install dsh-collab@dsh-collab-clients
+```
+
+请替换示例绝对路径。当前 GitHub 根目录的安装入口仍针对 Windows；macOS/Linux 使用 POSIX 下载包。不要同时注册同名市场的 Windows 和 POSIX 版本。macOS 原生验收尚未完成；请保留这个限制。
+
+DSH Web 可用 `dsh plugin --profile web add /absolute/path/dsh-collab-runtime-posix-0.4.0-rc.4.tgz`；桌面通过自身插件管理器安装。当前测试基线 DSH CLI 0.2.1-rc.2 还需要 PATH 中有 pnpm（测试使用 10.x）；仅有 Node/npm 时原生插件安装会报 `pnpm was not found`。桌面若自带包管理器，使用它自带的安装入口。将当前 profile 的 `dsh-collab.config.runtimeFile` 设置为以下完整绝对路径之一：
+
+- macOS：`/Users/你的用户名/Library/Application Support/DeepSeek Harness/runtime.json`
+- Linux：`/home/你的用户名/.config/DeepSeek Harness/runtime.json`；设置了绝对 `XDG_CONFIG_HOME` 时使用其目录。
+
+YAML 不展开 `~` 或 `$HOME`。后台与客户端必须使用同一个文件；自选位置时，在启动 Codex/Claude Code 的环境中设置 `DSH_DESKTOP_RUNTIME_FILE`。GUI 应用不一定继承终端环境，优先使用上述默认路径。然后只调用 `deepseek_runtime_status` 核对连接，不提交研究任务。WSL 不等于自动连接 Windows 后台；需要在同一环境运行两端，跨主机连接不在此适配范围内。
 
 ## 可以做什么
 
@@ -24,19 +89,27 @@ Collab 是第三方插件，与 DeepSeek、OpenAI、Anthropic 无隶属关系。
 
 DSH 协作中心提供结果、过程、轨迹、关系、用量和策略。过程沿用原生 Markdown 与工具调用样式，查看内容默认不发送消息、不续跑任务。Codex/CC 通过 MCP 读取同一份数据，不会自动增加宿主专属 Agent 图表页面。
 
+### 派发能力与工具白名单
+
+`max_children` 只是数量上限，不是授权。Lead 使用 `allowed_tools` 时，若需要创建子任务，白名单必须保留 `subagent` 或 `subagent_fork`；例如 `['read', 'glob', 'grep', 'subagent']`。插件不会因设置了子任务数量而自动扩大白名单。冲突会返回 `warnings`，并显示在策略页和客户端结果里。
+
+核对回执的 `delegation.policyAllows`、`delegation.enabled` 和 `exposedTools`。`enabled: null` 表示尚未观察到本轮请求；`true` 仅表示本轮有派发工具，不表示子任务已创建或还有剩余额度。实际创建情况看任务树。旧的 `allowDelegation: false` 字段不能作为 Lead 派发能力的判断依据。
+
+当前子任务禁用再委派时也会禁用 `send_message`，即使把它放进 `child_policy.allowed_tools` 也不会获得授权。子任务应以最终答复交付；只有明确获准写入且确有需要时才使用文件。原生交付提示会根据实际工具集生成，不再要求调用不可用的消息工具。
+
 ## 下载哪个包
 
 仓库为 [lie-groups-lie/dsh-collab](https://github.com/lie-groups-lie/dsh-collab)。发布后从 [Releases](https://github.com/lie-groups-lie/dsh-collab/releases) 下载预构建产品；候选版本请打开对应版本，不依赖 latest 链接。
 
 | 文件 | 是否需要 | 安装位置 |
 |---|---|---|
-| `dsh-collab-runtime-0.4.0-rc.2.tgz` | 必需 | DSH 端插件，装进已有 DSH profile |
-| `dsh-collab-clients-0.4.0-rc.2.tgz` | 必需 | 连接插件，选择 Codex 或 CC 入口安装 |
-| `dsh-collab-windows-0.4.0-rc.2.zip` | 方便一次下载 | 含上述两个 TGZ、中英文说明、版本清单和校验和 |
+| `dsh-collab-runtime-0.4.0-rc.4.tgz` | 必需 | DSH 端插件，装进已有 DSH profile |
+| `dsh-collab-clients-0.4.0-rc.4.tgz` | 必需 | 连接插件，选择 Codex 或 CC 入口安装 |
+| `dsh-collab-windows-0.4.0-rc.4.zip` | 方便一次下载 | 含上述两个 TGZ、中英文说明、版本清单和校验和 |
 
 产品包包含运行文件和预编译 Windows 启动器。**用户无需克隆源码、运行 npm build 或编译 C#。** `.mjs`、`.cjs`、`.js` 和 Skill 是实际执行组件，不是开发脚手架。公开仓库包含可阅读的执行源码和 Windows 启动器源码，不携带本地实验、会话库或开发现场。
 
-两个包的版本均为 0.4.0-rc.2，以 `PRODUCT.json` 为准。文件名中的 **Runtime 就是 DSH 端插件**：负责执行管理、状态和结果接口，不是另一个 DSH，也不是需要替换桌面的新运行环境。Clients 是连接 Codex/CC 的一端。
+两个包的版本均为 0.4.0-rc.4，以 `PRODUCT.json` 为准。文件名中的 **Runtime 就是 DSH 端插件**：负责执行管理、状态和结果接口，不是另一个 DSH，也不是需要替换桌面的新运行环境。Clients 是连接 Codex/CC 的一端。
 
 下载后可在 PowerShell 使用 `Get-FileHash -Algorithm SHA256 <文件路径>`，与同一 Release 的 `SHA256SUMS` 比较。哈希用于检查下载是否一致，不等于代码签名或安全认证。
 
@@ -67,7 +140,7 @@ DSH 协作中心提供结果、过程、轨迹、关系、用量和策略。过�
 在具备 DSH CLI 的环境中，安装到实际使用的 Web profile：
 
 ```powershell
-dsh plugin --profile web add C:/Downloads/dsh-collab-runtime-0.4.0-rc.2.tgz
+dsh plugin --profile web add C:/Downloads/dsh-collab-runtime-0.4.0-rc.4.tgz
 ```
 
 不要把此命令中的 `web` 直接换成社区桌面的 `desktop`；社区桌面由自身进程管理该 profile。
@@ -107,7 +180,7 @@ codex plugin add dsh-codex-collab@dsh-collab-clients
 
 > 检查 DSH Collab 连接，只调用运行状态检查，不创建任务。
 
-应能调用 `deepseek_runtime_status` 并看到兼容检查通过。核心插件提供 27 个工具，包括 `deepseek_flash`、`deepseek_lead`、`deepseek_task_tree`。只看到 Skill 不代表 MCP 已连接。
+应能调用 `deepseek_runtime_status` 并看到兼容检查通过。核心插件提供 30 个工具，包括 `deepseek_flash`、`deepseek_lead`、`deepseek_task_tree`。只看到 Skill 不代表 MCP 已连接。
 
 若旧聊天仍使用旧工具表，在没有需要保留的 Codex 执行时正常重开宿主；不要另外手动启动 MCP 服务器绕过插件。
 
@@ -185,3 +258,15 @@ Research 数学研究扩展暂不随本次产品分发，后续完成后再单�
 另已完成包哈希及独立导入、Codex/CC 的 MCP 初始化与工具列表，以及权限、通知等专项回归。接口验收不等于真实模型长期稳定性保证。社区 2.0.18 的全新 profile 偶发 Windows 目录重命名 `EPERM`，发生在插件加载前；不把已安装环境通过当成冷启动问题已修复，下载包也不包含修改过的第三方桌面。
 
 尚待验证的范围包括全新 Windows 机器安装、其他桌面和系统，以及真实模型的长期运行。历史 0xC0000005 尚待长期回归。
+
+## npm 安装入口
+
+本版本 DSH 端包名为 `dsh-codex-collab@0.4.0-rc.4`，可在桌面“添加插件”的 npm 源中填写这个完整名称。Web profile 使用 `dsh plugin --profile web add dsh-codex-collab@0.4.0-rc.4`。`dsh-collab` 是其他账号的 npm 包，不是本项目。
+
+npm 包只包含 DSH 端服务。Codex 和 Claude Code 各自的连接入口位于 Clients 下载包中，按上文选择安装。二者共享连接代码，但各自运行独立 MCP 进程，连接同一个 DSH 服务；同一 Lead 的推进仍需协调。
+
+### 从本地开发安装迁移到 npm
+
+同一包名从本地 link/path 切换到 npm 时，运行中的宿主可能继续缓存旧模块路径。卸载后安装成功，不代表热加载已经切换。若错误仍引用旧目录，且 npm 安装日志与现有 package.json 正常，先检查任务状态，再完整正常退出 DSH 桌面并重新打开；只刷新页面可能无效。不要删除会话、任务库或锁文件，也不要为消除报错重建旧目录。不要在仍使用旧包的进程退出前清理旧构建目录。
+
+发布前已验证干净安装；2026-11-01 另补测了社区 Desktop 2.0.18 的本地链接安装、正常退出、卸载、npm 重装、重新打开与连接检查，零模型调用。运行中直接换源的无重启热迁移不在通过范围内。

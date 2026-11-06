@@ -6,6 +6,7 @@ import transport from './dsh-transport.cjs';
 import { TaskStore } from '../core/task-store.mjs';
 import { ResultStore } from '../core/result-store.mjs';
 import { allowedTools } from '../core/capabilities.mjs';
+import { capabilityDiagnostics } from '../core/capability-diagnostics.mjs';
 import { withOperationLock, journaledOperation } from '../core/operation-lock.mjs';
 import { createReadBatcher } from '../core/observation.mjs';
 import { taskIndex } from '../core/task-index.mjs';
@@ -873,8 +874,11 @@ export function presentSessionResult(session, history, managed = null, options =
       : progress.stage === 'completed'
         ? 'completed'
         : progress.stage;
+  const toolsObserved = !awaitingTurn && Boolean(summary.headerObserved || observed);
+  const exposedTools = awaitingTurn ? [] : summary.headerObserved ? summary.exposedTools : observed?.exposedTools || [];
   return {
     sessionId,
+    ...capabilityDiagnostics(managed?.policy, { lead: managed?.role === 'lead', exposedTools: toolsObserved ? exposedTools : null }),
     admission: options.admission || null,
     admissionBlock: managed?.admissionBlock?.turn === summary.turn ? managed.admissionBlock : null,
     turnId: summary.turn,
@@ -909,7 +913,7 @@ export function presentSessionResult(session, history, managed = null, options =
     provider: awaitingTurn ? '' : summary.provider || requestConfig.provider || '',
     reasoningEffort: awaitingTurn ? '' : requestConfig.reasoningEffort || '',
     maxOutputTokens: !awaitingTurn && Number.isSafeInteger(requestConfig.maxTokens) ? requestConfig.maxTokens : null,
-    exposedTools: awaitingTurn ? [] : summary.headerObserved ? summary.exposedTools : observed?.exposedTools || [],
+    exposedTools,
     permission,
     permissionPreset,
     sandboxMode: summary.sandboxMode,

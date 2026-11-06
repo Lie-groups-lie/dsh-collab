@@ -233,6 +233,8 @@ window.__ModuleLoader__.load({ id: 'dsh-codex-collab', factory(require) {
       ['文件权限', permissionLabel(p.permission)], ['终端命令', yesNo(p.allowTerminal)], ['外部写入', yesNo(p.allowExternalWrites)], ['可用工具', tools(p)], ['每轮工具次数', limitLabel(p.maxToolCalls)], ['单次输出 tokens', limitLabel(p.maxOutputTokens)] ];
     return h('section', { role: 'tabpanel', 'aria-label': '策略' },
       h('p', { className: 'muted' }, '当前任务与未来子任务分别授权。共享预算约束整棵任务树；实际工具还需通过原生权限与插件准入检查。'),
+      result.warnings?.length > 0 && h('div', { className: 'notice', role: 'status' }, result.warnings.map((warning, i) => h('p', { key: `${warning.code}-${i}` }, warning.message))),
+      h(Fields, { rows: [ ['本轮派发工具', result.delegation?.enabled == null ? '等待本轮工具清单确认' : yesNo(result.delegation.enabled)], ['策略允许派发', yesNo(result.delegation?.policyAllows)], ['子任务数量上限（不代表已授权）', limitLabel(result.delegation?.maxChildren)], ['消息回传工具', result.messaging?.enabled == null ? '尚未观察到本轮请求' : yesNo(result.messaging.enabled)] ] }),
       h('div', { className: 'info-grid' }, h('article', { className: 'info-card' }, h('h2', null, '当前任务'), h(Fields, { rows: executionRows(policy) })),
         h('article', { className: 'info-card' }, h('h2', null, '未来子任务'), child ? h(Fields, { rows: executionRows(child) }) : h('p', { className: 'muted' }, '没有提供独立的子任务策略，不能据此推断其权限。')),
         h('article', { className: 'info-card' }, h('h2', null, '整棵任务树的预算'), h(Fields, { rows: [ ['累计请求', limitLabel(budget.maxRequests)], ['累计输入 tokens', limitLabel(budget.maxTotalInputTokens)], ['累计输出 tokens', limitLabel(budget.maxTotalOutputTokens)], ['累计工具调用', limitLabel(budget.maxTotalToolCalls)], ['总子任务数', limitLabel(budget.maxChildrenTotal)], ['实际截止时间', result.effectiveDeadline?.iso ? dateLabel(result.effectiveDeadline.iso) : result.effectiveDeadline ? '未设置' : '未提供'] ] }))),
@@ -418,9 +420,74 @@ window.__ModuleLoader__.load({ id: 'dsh-codex-collab', factory(require) {
         h('ol', { className: 'timeline' }, (detail.executions || []).map((entry, i) => h('li', { key: i }, h('time', null, dateLabel(entry.scheduledAt || entry.at)), h('strong', null, statusLabel(entry.state)), entry.reason && h('p', null, reasonLabel(entry.reason)), entry.modelStarted === false && h('p', { className: 'muted' }, '未启动模型')))),
         !detail.executions?.length && h('p', { className: 'muted' }, '暂无已保存的执行记录。原生投递记录可在详情中核对。'), h(RawDetails, { label: '原生投递与执行审计', value: detail })));
   }
+  function EvidencePanel({ sessionId, api, recovery = false }) {
+    const [data, setData] = useState(null), [error, setError] = useState(''), [loading, setLoading] = useState(false);
+    const [paths, setPaths] = useState(''), [revision, setRevision] = useState(0), [requestedPaths, setRequestedPaths] = useState([]);
+    const [message, setMessage] = useState('');
+    useEffect(() => {
+      const controller = new AbortController(); setLoading(true); setError('');
+      api(recovery ? 'deepseek_recovery_preview' : 'deepseek_task_evidence', { session_id: sessionId,
+        ...(!recovery && requestedPaths.length ? { artifact_paths: requestedPaths } : {}) }, controller.signal)
+        .then(value => { if (!controller.signal.aborted) setData(value); })
+        .catch(e => { if (!controller.signal.aborted) setError(`读取失败，保留上次记录：${e.message}`); })
+        .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+      return () => controller.abort();
+    }, [sessionId, recovery, revision, requestedPaths]);
+    const download = () => {
+      const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+      const a = document.createElement('a'); a.href = url; a.download = `collab-${recovery ? 'recovery-preview' : 'evidence'}.json`;
+      a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+    };
+    const tasks = (title, rows) => h('section', { className: 'info-card' }, h('h3', null, `${title} · ${rows.length}`),
+      rows.length ? h('ul', null, rows.map((row, i) => h('li', { key: row.sessionId || i }, row.title || row.name || '未命名任务')))
+        : h('p', { className: 'muted' }, '无'));
+    return h('section', { 'aria-label': recovery ? '恢复预演' : '交付证据' },
+      h('h2', null, recovery ? '恢复前，先核对保留的工作' : '交付证据'),
+      h('p', { className: 'muted' }, recovery ? '只检查当前记录。不启动模型，不重跑子任务，不清空费用。'
+        : '汇总当前任务树回执、可见结果摘要和共享用量。模型结束与交付验收分别记录。'),
+      h('div', { className: 'toolbar' }, h('button', { disabled: loading, onClick: () => setRevision(n => n + 1) }, loading ? '读取中…' : '重新核对'),
+        h('button', { disabled: !data || loading || !!error, onClick: download }, '下载证据 JSON')),
+      error && h('p', { role: 'alert', className: 'notice' }, error),
+      message && h('p', { role: 'status', className: 'notice' }, message),
+      data && (recovery ? h('div', null,
+        h('p', { className: 'notice' }, ({ blocked: '暂不能准备续接，请核对阻碍。', 'verification-required': '存在结果未知的操作，需要核验副作用。',
+          'ready-to-prepare': '可以准备原会话续接；不会自动启动任务。', 'no-recovery-needed': '当前没有需要恢复的中断回执。' })[data.state] || data.state),
+        h('div', { className: 'info-grid' }, tasks('保留的已结算任务', data.preserved), tasks('中断的回执', data.interrupted), tasks('保留的失败记录', data.failures)),
+        h('p', null, `待核验操作 ${data.uncertainSideEffects.length} 项 · 可重新读取 ${data.retryableReads.length} 项`),
+        h('p', null, `有效截止：${data.deadline?.at ? dateLabel(data.deadline.at) : '无已配置期限'}`),
+        data.blockers.length > 0 && h('ul', { className: 'notice' }, data.blockers.map((item, i) => h('li', { key: i },
+          ({ 'native-inbox-not-empty': '原会话仍有待处理消息。', 'native-agent-not-idle': '原生 Agent 尚未空闲。',
+            'live-dispatch': '任务仍有活动派发。', 'native-inspection-unavailable': '暂时无法核对原生会话。',
+            'shared-or-scheduled-deadline-expired': '共享任务或计划授权期限已过。', 'task-changed-during-preview': '读取期间任务记录有变化，请重新核对。' })[item.reason]
+            || '存在其他准入阻碍，请展开审计字段核对。'))),
+        h('ol', null, h('li', null, '读取并复用已完成分支的成果。'), h('li', null, '核验未知写入或其他副作用，不自动重试。'),
+          h('li', null, '准备恢复后，由调用方向同一会话提交剩余工作；仍须通过权限、预算和期限检查。')),
+        h('button', { disabled: loading || !!error || !data.canPrepare || !data.interrupted.length, onClick: async () => {
+          setLoading(true); setMessage('');
+          try {
+            const receipt = await api('deepseek_task_reconcile', { session_id: sessionId, action: 'recover', expected_digest: data.expectedDigest,
+              request_key: crypto.randomUUID(), reason: 'User explicitly prepared recovery after reviewing the read-only preview' });
+            setMessage(`已准备续接，保留 ${receipt.preservedSessions.length} 个已结算任务。没有启动模型，请由调用方向原会话提交继续指令。`);
+            setRevision(n => n + 1);
+          } catch (e) { setError(e.message); } finally { setLoading(false); }
+        } }, '准备原会话续接（不启动模型）')) : h('div', null,
+        h('div', { className: 'info-grid' }, h('section', { className: 'info-card' }, h('h3', null, '执行状态'),
+          h('p', null, ({ running: '仍在运行', settled: '回执已结算', 'needs-attention': '需要核验' })[data.executionState])),
+          h('section', { className: 'info-card' }, h('h3', null, '交付验收'), h('p', null, '尚未验证'), h('p', { className: 'muted' }, '本页不会执行测试或判断答案正确。'))),
+        h('p', null, `覆盖 ${data.coverage.includedTasks} / ${data.coverage.totalTasks} 个任务 · 已保留结果 ${data.summary.retainedOutputs} 份 · 文件哈希 ${data.summary.hashedArtifacts} / ${data.summary.requestedArtifacts}`),
+        (!data.stable || data.warnings.length > 0) && h('p', { className: 'notice' }, '记录有变化或覆盖不完整，请展开详情核对后重新读取。'),
+        h('label', null, '可选：核对当前工作区文件（每行一个相对路径，使用 /）',
+          h('textarea', { value: paths, rows: 3, style: { display: 'block', width: '100%', boxSizing: 'border-box' }, onChange: e => setPaths(e.target.value), placeholder: 'reports/result.json' })),
+        h('button', { disabled: loading, onClick: () => { setRequestedPaths([...new Set(paths.split(/\r?\n/).map(p => p.trim()).filter(Boolean))]); } }, '读取并计算哈希'),
+        h('p', { className: 'muted' }, '只读取明确指定的文件，不扫描目录。哈希反映当前文件，不证明由哪个任务生成；导出不含文件正文。'),
+        data.artifacts.map(row => h('p', { key: row.path }, `${row.path} · ${({ hashed: '已计算哈希', missing: '文件不存在', 'size-limit': '超过读取额度', 'changed-during-read': '读取期间有变化', 'unreadable-or-disallowed': '无法读取或路径不允许' })[row.state] || row.state}`)))),
+      data && h('p', { className: 'muted' }, `共享累计用量：输入 ${data.accounting?.inputTokens ?? '未知'} / 输出 ${data.accounting?.outputTokens ?? '未知'} token。${data.accounting?.usageMissing ? '包含保守预留量，不能视作实际账单。' : '以提供方账单为准。'}`),
+      data && h('p', { className: 'muted' }, '导出包含任务标题、标识与相对路径；对外分享前请自行检查。'),
+      data && h(RawDetails, { label: '精确回执、阻碍与审计字段', value: data }));
+  }
   function Detail({ task, api = request, back, openTask }) {
     const [restoring, setRestoring] = useState(false), [restoreMessage, setRestoreMessage] = useState('');
-    const [reader] = useState(() => new ResultReader(task.sessionId, api)), [trace] = useState(() => new TraceReader(task.sessionId, api)), [, render] = useState(0), [tab, setTab] = useState('过程');
+    const [reader] = useState(() => new ResultReader(task.sessionId, api)), [trace] = useState(() => new TraceReader(task.sessionId, api)), [, render] = useState(0), [tab, setTab] = useState(task.initialTab || '过程');
     useEffect(() => {
       reader.changed = () => render(n => n + 1); void reader.load(); return () => reader.dispose();
     }, [reader]);
@@ -447,11 +514,12 @@ window.__ModuleLoader__.load({ id: 'dsh-codex-collab', factory(require) {
       restoreMessage && h('div', { role: 'status', className: 'notice' }, restoreMessage),
       h('style', null, conversationStyle), h('p', { className: 'readonly-label' }, '只读查看 · 不发送消息，不续跑任务'),
       h('div', { className: 'detail' }, h('section', null,
-        h('nav', { className: 'tabs', role: 'tablist', 'aria-label': '任务详情' }, ['过程', '结果', '任务', '轨迹', '策略', '任务树', ...(task.role === 'lead' ? ['调度'] : [])].map((name) => h('button', { key: name, role: 'tab', 'aria-selected': tab === name, onClick: () => setTab(name) }, name))),
+        h('nav', { className: 'tabs', role: 'tablist', 'aria-label': '任务详情' }, ['过程', '结果', '任务', '轨迹', '策略', '任务树', '交付', '恢复预演', ...(task.role === 'lead' ? ['调度'] : [])].map((name) => h('button', { key: name, role: 'tab', 'aria-selected': tab === name, onClick: () => setTab(name) }, name))),
         ['过程', '轨迹'].includes(tab) ? h(Trace, { key: tab, reader: trace, sessionId: task.sessionId, api, openTask, outline: tab === '轨迹' })
           : tab === '任务树' ? h(TaskTree, { sessionId: task.sessionId, api, openTask })
           : tab === '策略' ? h(Policy, { result })
           : tab === '调度' ? h(Schedules, { sessionId: task.sessionId, api })
+          : ['交付', '恢复预演'].includes(tab) ? h(EvidencePanel, { key: tab, sessionId: task.sessionId, api, recovery: tab === '恢复预演' })
             : h('div', { className: 'answer', role: 'tabpanel', 'aria-label': tab }, result ? tab === '结果' ? h(NativeText, { text }) : h('pre', null, text) : '正在按需读取…'),
         result?.sourceTruncated && h('div', { className: 'notice' }, '源结果达到保留上限；这里不是完整 transcript。'),
         tab === '结果' && h(ScrollTail, { more: result?.nextOffset != null, loading, error, load: () => reader.load(true), retry: () => reader.load(), label: '结果' })),
@@ -583,17 +651,7 @@ window.__ModuleLoader__.load({ id: 'dsh-codex-collab', factory(require) {
           catch (e) { setNotice(e.message); } finally { setAction(false); }
         } }, '启用后台汇报（5 分钟）'),
         h('button', { role: 'menuitem', disabled: action, onClick: () => perform('deepseek_task_cancel', [menu.task]) }, '取消任务及后代'),
-        menu.task.submission?.state === 'unknown' && h('button', { role: 'menuitem', disabled: action, onClick: async () => {
-          const id = menu.task.sessionId; setMenu(null); setAction(true);
-          try {
-            const plan = await request('deepseek_task_reconcile', { session_id: id });
-            if (!plan.canRecover) { setNotice(`尚不能恢复：${plan.blockers.map(b => `${b.sessionId}: ${b.reason}`).join('\n')}`); return; }
-            const receipt = await request('deepseek_task_reconcile', { session_id: id, action: 'recover',
-              expected_digest: plan.digest, request_key: crypto.randomUUID(), reason: '用户在协作中心准备原任务中断续接' });
-            setNotice(`原任务已可续接，保留 ${receipt.preservedSessions.length} 个已结束子任务；未启动模型或重跑任务。请向同一 Lead 提交继续指令。`);
-            void observer.load({ archived });
-          } catch (e) { setNotice(e.message); } finally { setAction(false); }
-        } }, '恢复中断任务（保留成果）'),
+        h('button', { role: 'menuitem', onClick: () => openTask({ ...menu.task, initialTab: '恢复预演' }) }, '查看恢复预演'),
         menu.task.archived
           ? h('button', { role: 'menuitem', disabled: action, onClick: () => perform('deepseek_session_archive', [menu.task], 'restore') }, '恢复归档')
           : h('button', { role: 'menuitem', disabled: action || busy(menu.task), onClick: () => perform('deepseek_session_archive', [menu.task]) }, '归档')));
@@ -603,5 +661,5 @@ window.__ModuleLoader__.load({ id: 'dsh-codex-collab', factory(require) {
     ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: PANEL, order: 10, label: '协作中心' },
       () => h('span', { 'aria-hidden': true }, '◇')));
   }
-  return { apply, inject: ['slots', 'layout'], Observer, autoRefresh, ResultReader, TraceReader, ReportReader, connectScrollTail, treeRows, conversationGroups };
+  return { apply, inject: ['slots', 'layout'], Observer, autoRefresh, ResultReader, TraceReader, ReportReader, connectScrollTail, treeRows, conversationGroups, EvidencePanel, Detail };
 } });

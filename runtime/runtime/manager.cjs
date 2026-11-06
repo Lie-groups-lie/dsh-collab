@@ -213,7 +213,7 @@ async function startDsh(options = {}) {
   child.stderr?.on('data', (chunk) => record('stderr', chunk));
 
   try {
-    await waitForReady(url, child, 45_000, compareVersions(located.version, '0.2.0') >= 0, handshakeFile);
+    await waitForReady(url, child, options.startupTimeoutMs ?? 45_000, compareVersions(located.version, '0.2.0') >= 0, handshakeFile);
     if (compareVersions(located.version, '0.2.0') >= 0) {
       const deadline = Date.now() + 30000;
       while (!fs.existsSync(handshakeFile) && Date.now() < deadline) {

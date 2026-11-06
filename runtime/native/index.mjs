@@ -8,6 +8,8 @@ import { TaskStore } from '../core/task-store.mjs';
 import { archiveAdmission, assertArchiveAdmission, liveArchiveAdmission } from '../core/archive-admission.mjs';
 import { processIdentity } from '../core/process-identity.mjs';
 import { allowedTools, budgetPolicy, continuedPolicy, optionalLimit } from '../core/capabilities.mjs';
+import { capabilityDiagnostics } from '../core/capability-diagnostics.mjs';
+import { withDeliveryGuidance } from './capability-guidance.mjs';
 import { scheduleConclusion, recordWork } from './finalization.mjs';
 import { continueUntilAnswer, recordActivity } from './completion.mjs';
 import { budgetedStream, readPricing } from './model-budget.mjs';
@@ -51,6 +53,8 @@ const TOOL_DENY_LIST = Object.freeze([
   'interrupt_agent',
 ]);
 const STANDARD_MODEL_TOOLS = Object.freeze([
+  'pwsh',
+  'bash',
   'edit',
   'glob',
   'grep',
@@ -161,7 +165,7 @@ function textPrompt(value) {
 
 function taskLabel(task) {
   const compact = String(task).replace(/\s+/g, ' ').trim();
-  return `Codex · ${compact.slice(0, 56) || 'DeepSeek task'}`;
+  return `Collab · ${compact.slice(0, 56) || 'DeepSeek task'}`;
 }
 
 function success(value) {
@@ -343,20 +347,15 @@ function applyPermission(ctx, agent, policy) {
   ctx.permissionPresets.set(agent.session, policy.permission);
 }
 
-function terminalToolName() {
-  return process.platform === 'win32' ? 'pwsh' : 'bash';
-}
-
 export function deniedChildTools(policy) {
   const denied = new Set();
   if (policy.maxToolCalls === 0) {
     for (const name of STANDARD_MODEL_TOOLS) denied.add(name);
-    denied.add(terminalToolName());
   }
   if (!policy.allowDelegation) {
     for (const name of TOOL_DENY_LIST) denied.add(name);
   }
-  if (!policy.allowTerminal || policy.permission === 'read-only') denied.add(terminalToolName());
+  if (!policy.allowTerminal || policy.permission === 'read-only') { denied.add('pwsh'); denied.add('bash'); }
   if (policy.permission === 'read-only') {
     denied.add('write');
     denied.add('edit');
@@ -368,9 +367,8 @@ export function deniedLeadTools(policy) {
   const denied = new Set();
   if (policy.maxToolCalls === 0) {
     for (const name of STANDARD_MODEL_TOOLS) denied.add(name);
-    denied.add(terminalToolName());
   }
-  if (!policy.allowTerminal || policy.permission === 'read-only') denied.add(terminalToolName());
+  if (!policy.allowTerminal || policy.permission === 'read-only') { denied.add('pwsh'); denied.add('bash'); }
   if (policy.permission === 'read-only') {
     denied.add('write');
     denied.add('edit');
@@ -495,7 +493,8 @@ function installCoordinatorGuards(ctx) {
       const assembly = await next();
       const policy = context.agent && (policies.get(context.agent.id) || leadPolicies.get(context.agent.id));
       if (!policy) return assembly;
-      return { ...assembly, tools: assembly.tools.filter((tool) => !permittedTool(tool, policy, context.agent, !policies.has(context.agent.id))) };
+      const filtered = { ...assembly, tools: assembly.tools.filter((tool) => !permittedTool(tool, policy, context.agent, !policies.has(context.agent.id))) };
+      return policies.has(context.agent.id) ? withDeliveryGuidance(filtered) : filtered;
     }, { global: true }),
     ctx.on('agent/pre-step', async ({ agent, messages }, next) => {
       const childPolicy = policies.get(agent.id);
@@ -665,7 +664,7 @@ export function apply(ctx, config = {}) {
     applyPermission(ctx, agent, policy); applyLeadToolRestriction(agent, policy);
     if (payload.prompt) agent.followup(Object.freeze({ id: randomUUID(), role: 'user', source: Object.freeze({ kind: 'user' }),
       content: Object.freeze(textPrompt(recovery ? `${recoveryPrompt(existing, recovery)}\n\nCurrent continuation instruction:\n${payload.prompt}` : payload.prompt).map(Object.freeze)) }));
-    const receipt = { sessionId: agent.id, role: 'lead', lease: 'active', policy,
+    const receipt = { sessionId: agent.id, role: 'lead', lease: 'active', policy, ...capabilityDiagnostics(policy, { lead: true }),
       requestKey: payload.requestKey || null, submission: taskStore.get(agent.id).dispatch, ...(recovery ? { recovery } : {}) };
     if (submission) taskStore.completeSubmission(submission.id, receipt);
     return receipt;

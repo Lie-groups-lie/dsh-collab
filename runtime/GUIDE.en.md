@@ -6,7 +6,72 @@ Send work from Codex or Claude Code (CC) to your local DeepSeek Harness, then ch
 
 Collab is a third-party plugin, not affiliated with DeepSeek, OpenAI or Anthropic. Tasks run in your existing DSH installation. The Research extension is still in development and is not included in this download.
 
-**dsh-collab 0.4.0-rc.2 · Windows x64 · MIT**. The project code and original branching icon use the MIT License. The download includes the license text and the upstream copyright and license for the bundled `ws` dependency.
+**dsh-collab 0.4.0-rc.4 · Windows x64; candidate macOS/Linux support · MIT**. The project code and original branching icon use the MIT License. The download includes the license text and the upstream copyright and license for the bundled `ws` dependency. Ubuntu WSL candidate installation/connection checks passed; native macOS and target desktop UI acceptance remain separate gates.
+
+rc.4 adds delivery evidence and recovery previews alongside policy preflight, compact receipts and layered connection diagnostics (30 tools in the default full profile). Use matching Runtime and Clients versions; rc.2 does not implement all new interfaces.
+
+Candidate `deepseek_task_preflight` accepts `kind` (`direct` or `lead`), absolute `cwd`, and `policy` using the dispatch permission/budget fields. It checks prospective new-task conflicts without creating sessions, calling models or granting permissions. The MCP entry still requires a connected Runtime. It does not check existing-session policy, remaining budgets, actual models or native tool availability. It is not a recovery or continuation admission check.
+
+For entirely offline connection inspection, run `node lib/diagnostics.mjs` from the extracted Clients directory. Its report distinguishes missing, invalid, unreadable and incompatible records without printing paths, endpoints, credentials or session content. Multiple valid records block automatic selection: set `DSH_DESKTOP_RUNTIME_FILE` to the intended record. The diagnostic never restarts or switches the backend.
+
+The candidate also supports `DSH_COLLAB_TOOL_PROFILE=core`, an optional 15-tool list. Full remains the default: core omits preflight, schedules, notification and policy operations. Use full for workflows requiring those tools. Shorter descriptions retain every budget and permission field; they do not reduce execution budgets.
+
+Candidate Clients default to compact receipts (`response_detail: "compact"`). Answers, distinct partial output, IDs, warnings, permissions and usage totals remain. Per-request ledger IDs and activity/tool lists are available on demand via full detail or paged trace. `receiptView.refs` means exact equality with another field, never an additional grant. `response_detail: "full"` returns raw detail; DSH UI and durable records are unchanged.
+
+When a host reserves `session_id`, use the advertised `task_session_id` alias. Conflicting values are rejected. Status/result reads can pass the previous `responseRevision` as `if_response_revision`; `unchanged: true` means reuse that result, not an empty answer. Every call still reads the Runtime; this never skips admission or submits work. Prefer `deepseek_tasks_wait` for polling and paged results afterward. Do not resubmit tasks to fetch status. These options require the new Clients schema to be loaded.
+
+## Delivery evidence and recovery preview
+
+In a task detail, open **交付 (Delivery)** or **恢复预演 (Recovery preview)**. These views load on demand and make no model calls. Export JSON explicitly; task titles, IDs and relative paths may be sensitive, so inspect before sharing.
+
+- `deepseek_task_evidence({session_id})` summarizes current family receipts (up to 64 tasks), hashes retained visible output, includes a bounded selected-session execution tail and reports the shared cumulative ledger once. It is a manifest with read links, not a full historical transcript or provider invoice. Missing usage and incomplete coverage remain explicit.
+- Optional `artifact_paths: ["reports/result.json"]` hashes specified current workspace files only: 20 paths, 16 MiB each, 64 MiB total. Use relative paths with forward slashes. Traversal, symlinks and hardlinks are rejected; file contents are not exported. A hash does not establish which task wrote the file or whether tests passed.
+- `deepseek_recovery_preview({session_id})` inspects retained branches, interrupted receipts, uncertain side effects and effective deadlines without preparing recovery. It never abandons work, resets usage or retries operations. Read-only tools remain available while write uncertainty requires verification.
+- The explicit **准备原会话续接 (Prepare continuation)** button uses a fresh-evidence digest gate. It preserves settled children and accounting and does not launch a model. The caller then continues authorized remaining work in the original session. A changed record, live task, expired deadline or blocked native admission prevents this path; preview does not override policy.
+
+Execution settlement and delivery acceptance are separate: this exporter always reports acceptance as **not validated**. Mathematical correctness requires independent verification. Full-profile clients expose these tools; the optional core profile does not. No evidence is uploaded automatically.
+
+## Unified setup and diagnostics
+
+First install the DSH side into your existing profile as described below: enter `dsh-codex-collab@0.4.0-rc.4` in its plugin manager, or install the matching Runtime TGZ. Extract the Clients TGZ for your OS into a permanent location. In its `package` directory, run in a terminal:
+
+```sh
+node setup.mjs install codex
+node setup.mjs install claude
+node setup.mjs doctor
+node setup.mjs doctor --live
+```
+
+`install` previews steps using your actual package path. Add `--apply` to register the marketplace and install through the host CLI. If the CLI is not on PATH, add `--cli /absolute/path/to/executable`. A marketplace pointing elsewhere is a conflict, not permission to replace it. Setup does not uninstall plugins, add permission allowlists or restart either host. The DSH package remains managed by its own plugin manager; configure connection discovery as described below.
+
+`doctor` checks offline discovery. `--live` also authenticates and queries read-only health, distinguishing auth rejection, an unreachable backend and an incompatible runtime contract. Reports omit endpoints, credentials and session content. Success does not prove the current chat loaded MCP or that paid inference works: finish by calling `deepseek_runtime_status` inside your intended host.
+
+## macOS / Linux candidate
+
+Use `dsh-collab-posix-0.4.0-rc.4.tar.gz`, containing the `runtime-posix` and `clients-posix` TGZ files. The client starts system Node directly, with no Windows launcher. Node.js 22.19 or later must be on the host process's PATH. Apple Silicon and Intel use the same JavaScript package with their own native Node; neither has completed native acceptance yet.
+
+Extract the Clients TGZ into a permanent location, for example `/absolute/path/clients/package`. In a terminal:
+
+```sh
+codex plugin marketplace add /absolute/path/clients/package
+codex plugin add dsh-codex-collab@dsh-collab-clients
+```
+
+In the Claude Code conversation input:
+
+```text
+/plugin marketplace add /absolute/path/clients/package
+/plugin install dsh-collab@dsh-collab-clients
+```
+
+Replace the example path. The current GitHub root catalog still targets Windows; use the POSIX download on macOS/Linux. Do not register Windows and POSIX packages under the same marketplace name at the same time. Native macOS acceptance remains pending.
+
+For DSH Web, use `dsh plugin --profile web add /absolute/path/dsh-collab-runtime-posix-0.4.0-rc.4.tgz`. The tested DSH CLI 0.2.1-rc.2 also requires pnpm on PATH (10.x in this test); Node/npm alone produces `pnpm was not found` during plugin installation. For desktop hosts, use their own plugin manager and bundled package tools. Set the active profile's `dsh-collab.config.runtimeFile` to an expanded absolute path:
+
+- macOS: `/Users/your-user/Library/Application Support/DeepSeek Harness/runtime.json`
+- Linux: `/home/your-user/.config/DeepSeek Harness/runtime.json`, or the directory selected by an absolute `XDG_CONFIG_HOME`.
+
+YAML does not expand `~` or `$HOME`. Both sides must select the same file. For a custom location, set `DSH_DESKTOP_RUNTIME_FILE` in the environment that launches Codex/Claude Code. GUI applications may not inherit terminal environment variables, so prefer the default path. Call only `deepseek_runtime_status` to verify the connection. WSL does not automatically connect to a Windows backend; run both sides in the same OS/network environment. Remote-host access is outside this adaptation.
 
 ## Features
 
@@ -24,19 +89,27 @@ Collab is a third-party plugin, not affiliated with DeepSeek, OpenAI or Anthropi
 
 The DSH collaboration center displays results, activity, traces, relationships, usage and policy. Activity uses native Markdown and tool-call styling. Viewing records does not send messages or continue work. Codex/CC read the same data through MCP; the plugin does not add a native host-specific agent graph page.
 
+### Delegation and tool selection
+
+`max_children` is a ceiling, not a grant. A Lead using `allowed_tools` needs `subagent` or `subagent_fork` in that list to create children, for example `['read', 'glob', 'grep', 'subagent']`. Collab never widens the whitelist because a child count was requested. Conflicts produce `warnings` in receipts, the policy view and client results.
+
+Inspect `delegation.policyAllows`, `delegation.enabled` and `exposedTools`. An `enabled` value of `null` means no current-turn request has been observed. `true` means a spawn tool was exposed, not that a child was created or that budget remains. Confirm creation through the task tree. The legacy `allowDelegation: false` field does not describe effective Lead delegation.
+
+Current child policies also block `send_message` when re-delegation is disabled. Listing it in `child_policy.allowed_tools` does not grant it. Request final-answer delivery; use files only when writing is authorized and needed. Native delivery guidance follows the actual exposed tool set.
+
 ## Which download do I need?
 
 The repository is [lie-groups-lie/dsh-collab](https://github.com/lie-groups-lie/dsh-collab). Once published, download the prebuilt product from [Releases](https://github.com/lie-groups-lie/dsh-collab/releases). Open the specific release for a prerelease; do not rely on a latest link.
 
 | File | Required? | Installation destination |
 |---|---|---|
-| `dsh-collab-runtime-0.4.0-rc.2.tgz` | Required | DSH-side plugin, installed in an existing DSH profile |
-| `dsh-collab-clients-0.4.0-rc.2.tgz` | Required | Connection plugin; choose the Codex or CC entry |
-| `dsh-collab-windows-0.4.0-rc.2.zip` | Convenient combined download | Both TGZ files, bilingual guides, version manifest and checksums |
+| `dsh-collab-runtime-0.4.0-rc.4.tgz` | Required | DSH-side plugin, installed in an existing DSH profile |
+| `dsh-collab-clients-0.4.0-rc.4.tgz` | Required | Connection plugin; choose the Codex or CC entry |
+| `dsh-collab-windows-0.4.0-rc.4.zip` | Convenient combined download | Both TGZ files, bilingual guides, version manifest and checksums |
 
 Packages contain runtime files and precompiled Windows launchers. **You do not need to clone the source, run npm build or compile C#.** The `.mjs`, `.cjs`, `.js` files and Skills are execution components, not development scaffolding. The public repository includes readable execution code and Windows launcher source, without local experiments, session stores or development captures.
 
-Both packages are version 0.4.0-rc.2; see `PRODUCT.json`. **Runtime means the DSH-side plugin** that manages execution, status and result access. It is not another DSH installation or a replacement desktop. Clients connects Codex/CC to it.
+Both packages are version 0.4.0-rc.4; see `PRODUCT.json`. **Runtime means the DSH-side plugin** that manages execution, status and result access. It is not another DSH installation or a replacement desktop. Clients connects Codex/CC to it.
 
 Use PowerShell's `Get-FileHash -Algorithm SHA256 <file-path>` to compare downloads against the same Release's `SHA256SUMS`. Matching hashes establish file consistency, not code signing or security certification.
 
@@ -67,7 +140,7 @@ Use the plugin installation entry in Anywhere Labs **DSH Desktop 2.0.18** to ins
 With the DSH CLI available, install into your actual Web profile:
 
 ```powershell
-dsh plugin --profile web add C:/Downloads/dsh-collab-runtime-0.4.0-rc.2.tgz
+dsh plugin --profile web add C:/Downloads/dsh-collab-runtime-0.4.0-rc.4.tgz
 ```
 
 Do not simply replace `web` with the community desktop's `desktop` profile. That profile is managed by the desktop's own process.
@@ -107,7 +180,7 @@ Then ask Codex:
 
 > Check the DSH Collab connection using only the runtime status tool. Do not create a task.
 
-`deepseek_runtime_status` should be callable and report a passing compatibility check. The core plugin exposes 27 tools, including `deepseek_flash`, `deepseek_lead` and `deepseek_task_tree`. A visible Skill alone does not establish an MCP connection.
+`deepseek_runtime_status` should be callable and report a passing compatibility check. The core plugin exposes 30 tools, including `deepseek_flash`, `deepseek_lead` and `deepseek_task_tree`. A visible Skill alone does not establish an MCP connection.
 
 If an existing chat retains an old tool list, reopen the host normally once there is no Codex execution that needs preserving. Do not manually start another MCP server to bypass the plugin.
 
@@ -185,3 +258,15 @@ Host acceptance uses isolated profiles and workspaces with a loopback mock provi
 Other checks cover package hashes and independent imports, Codex/CC MCP initialization and tool lists, permissions and notifications. They do not establish long-running stability with real models. Fresh community 2.0.18 profiles can encounter an intermittent Windows directory-rename `EPERM` before plugin loading. Passing in an initialized installation does not resolve that upstream cold-start issue; modified third-party desktops are not included in the download.
 
 Outstanding checks include installation on a clean Windows machine, other desktops and operating systems, and long-running use with real models. The historical 0xC0000005 crash still needs long-term regression coverage.
+
+## npm installation
+
+The DSH-side package is `dsh-codex-collab@0.4.0-rc.4`. Enter that exact name in the desktop npm plugin source, or run `dsh plugin --profile web add dsh-codex-collab@0.4.0-rc.4` for a Web profile. The npm package named `dsh-collab` belongs to another account.
+
+The npm package contains only the DSH service. Install the Codex and/or Claude Code entries from the separate Clients download as described above. They share connection code but run separate MCP processes against the same DSH service. Coordinate continuation ownership for the same Lead.
+
+### Migrating a local development install to npm
+
+When changing the same package from a local link/path to npm, a running host can retain old module paths. Successful installation does not establish a successful hot reload. If errors still name an old directory while npm installation and the installed manifest are correct, check running work, fully quit the DSH desktop normally, and reopen it. A page refresh may be insufficient. Do not delete session stores, task ledgers or locks, or recreate an obsolete directory to hide the error. Retain old build directories until processes using them have exited.
+
+In addition to fresh installs, the local-link → normal shutdown → uninstall → npm install → reopen and connection-check flow passed on community Desktop 2.0.18 on 2026-11-01 with no model calls. Changing installation sources in a live process without a restart is not a validated migration route.

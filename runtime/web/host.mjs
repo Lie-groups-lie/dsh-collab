@@ -2,7 +2,7 @@
 import { callTool } from '../service/index.mjs';
 
 export const UI_OPERATIONS = new Set(['deepseek_tasks_list', 'deepseek_task_result',
-  'deepseek_task_trace', 'deepseek_task_tree',
+  'deepseek_task_trace', 'deepseek_task_tree', 'deepseek_task_evidence', 'deepseek_recovery_preview',
   'deepseek_flash_status', 'deepseek_task_cancel', 'deepseek_session_archive',
   'deepseek_watch', 'deepseek_notifications', 'deepseek_task_reconcile',
   'deepseek_schedule_list', 'deepseek_schedule_history']);

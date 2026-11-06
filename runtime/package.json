@@ -1,6 +1,6 @@
 {
   "name": "dsh-codex-collab",
-  "version": "0.4.0-rc.2",
+  "version": "0.4.0-rc.4",
   "private": false,
   "license": "MIT",
   "description": "Delegate and continue DSH agent tasks from Codex and Claude Code, with progress, policies and usage tracking.",

@@ -1,5 +1,6 @@
 {
   "name": "dsh-collab-clients",
+  "description": "Managed DSH collaboration for Claude Code through the local DSH Runtime.",
   "owner": {
     "name": "DSH Collab contributors"
   },

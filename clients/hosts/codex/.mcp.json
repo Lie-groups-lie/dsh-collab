@@ -9,9 +9,12 @@
       "env_vars": [
         "APPDATA",
         "USERPROFILE",
+        "HOME",
+        "XDG_CONFIG_HOME",
         "PATH",
         "DSH_MCP_NODE",
-        "DSH_DESKTOP_RUNTIME_FILE"
+        "DSH_DESKTOP_RUNTIME_FILE",
+        "DSH_COLLAB_TOOL_PROFILE"
       ],
       "startup_timeout_sec": 30,
       "tool_timeout_sec": 7200

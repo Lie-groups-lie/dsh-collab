@@ -3,6 +3,12 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import contract from '../runtime-contract.json' with { type: 'json' };
 import { budgetPolicy, optionalLimit } from '../core/capabilities.mjs';
+import { policyPreview } from '../core/policy-preview.mjs';
+import { taskResultView } from '../core/task-result-view.mjs';
+import { deliveryEvidence, retainedAnswer, recoveryPreview } from '../core/delivery-evidence.mjs';
+import { TaskStore } from '../core/task-store.mjs';
+import { deadlineFor } from '../core/deadline.mjs';
+import { hashArtifacts } from './evidence-files.mjs';
 import { validateInput } from '../core/schema.mjs';
 import { ResultStore } from '../core/result-store.mjs';
 import { notificationTools } from '../core/notifications.mjs';
@@ -86,7 +92,7 @@ const BUDGET_SCHEMA = {
   max_tool_calls_total: { type: 'integer', minimum: -1, description: 'Optional shared tool-call limit; omit or -1 for no count limit. 0 denies all tools.' },
   max_children_total: { type: 'integer', minimum: 0, maximum: 256, default: 16 },
   max_duration_seconds: { type: 'integer', minimum: -1, maximum: 604800, description: 'Optional deadline from original task creation; omit or -1 for no plugin deadline. Positive seconds cooperatively cancel generation/tools; not an OS kill boundary.' },
-  allowed_tools: { type: 'array', items: { type: 'string' }, uniqueItems: true, description: 'Narrow built-in capabilities and explicitly select administrator-registered third-party tools. Unknown names never grant access.' },
+  allowed_tools: { type: 'array', items: { type: 'string' }, uniqueItems: true, description: 'Narrow built-in capabilities and explicitly select administrator-registered third-party tools. Lead delegation requires subagent or subagent_fork in this list; max_children alone grants no tool. send_message must be selected AND separately permitted by the task policy. Child messaging remains blocked when delegation is disabled; use final-answer delivery. Unknown names never grant access.' },
 };
 
 function requestBudget(args) {
@@ -114,7 +120,7 @@ export const tools = [
   },
   {
     name: 'deepseek_flash',
-    description: 'Run the latest official deepseek-flash model as a native, continuable DSH child agent and return its final answer. New calls are grouped below one Codex coordination session per workspace.',
+    description: 'Run the latest official deepseek-flash model as a native, continuable DSH child agent and return its final answer. New calls are grouped below one Collab coordination session per workspace.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -317,6 +323,16 @@ tools.push({ name: 'deepseek_tasks_list', description: 'List managed Direct, Lea
     include_archived: { type: 'boolean', default: false } }, additionalProperties: false } });
 tools.push({ name: 'deepseek_task_tree', description: 'Read the full durable task family, including archived/missing children, exact receipt/turn IDs and recovery state. Does not wake, reconcile or execute any agent.',
   inputSchema: { type: 'object', properties: { session_id: { type: 'string', minLength: 1, maxLength: 160 }, receipt_offset: { type: 'integer', minimum: 0 } }, required: ['session_id'], additionalProperties: false } });
+tools.push({ name: 'deepseek_task_evidence', description: 'Build a read-only delivery evidence manifest: current family receipts, retained output hashes, bounded visible execution references, shared accounting and optional workspace file hashes. Does not execute tests or certify correctness. No task mutation or model call; exported data may contain task titles and relative paths.',
+  inputSchema: { type: 'object', required: ['session_id'], additionalProperties: false, properties: {
+    session_id: { type: 'string', pattern: '^[a-zA-Z0-9_-]{1,160}$' },
+    artifact_paths: { type: 'array', maxItems: 20, uniqueItems: true, items: { type: 'string', minLength: 1, maxLength: 500 },
+      description: 'Optional explicit paths relative to the selected native workspace, using forward slashes. No traversal, symlinks, directory scans or file bodies; at most 16 MiB per file, 64 MiB total.' },
+  } } });
+tools.push({ name: 'deepseek_recovery_preview', description: 'Read-only rehearsal of recovery for the existing task family: retained branches, interrupted receipts, unknown side effects, shared deadline and usage. Does not reconcile, resolve uncertainty, continue, abandon or replay work. A fresh inspection is still required before recovery.',
+  inputSchema: { type: 'object', required: ['session_id'], additionalProperties: false,
+    properties: { session_id: { type: 'string', pattern: '^[a-zA-Z0-9_-]{1,160}$' } } } });
+
 tools.push({ name: 'deepseek_task_cancel', description: 'Request cancellation of a managed task, optionally including descendants. Cancellation acknowledgement is not proof of quiescence; wait afterward.',
   inputSchema: { type: 'object', properties: { session_id: { type: 'string', minLength: 1 },
     scope: { type: 'string', enum: ['self', 'tree'], default: 'tree' } }, required: ['session_id'], additionalProperties: false } });
@@ -325,8 +341,20 @@ tools.push({ name: 'deepseek_tasks_start', description: 'Start up to eight indep
     items: { ...tools.find((t) => t.name === 'deepseek_flash').inputSchema, required: ['task', 'cwd', 'request_key'] } } }, required: ['tasks'], additionalProperties: false } });
 tools.push({ name: 'deepseek_capabilities', description: 'Inspect actual DSH plugin tools, pinned schemas and effective task permissions. Read-only; never wakes an agent, grants capabilities, executes tools or imports Codex-only plugins. A cold session returns unknown availability.',
   inputSchema: capabilityQuerySchema });
+const previewFields = ['permission', 'reasoning_effort', 'max_output_tokens', 'unlimited_output_tokens',
+  'max_tool_calls', 'allow_terminal', 'finalize_empty', 'continue_until_answer', 'max_transcript_tokens',
+  'max_children', 'child_policy', ...Object.keys(BUDGET_SCHEMA)];
+const previewProperties = Object.fromEntries(previewFields.map(name => [name,
+  tools.find(t => t.name === 'deepseek_lead').inputSchema.properties[name]
+    || tools.find(t => t.name === 'deepseek_flash').inputSchema.properties[name]]));
+tools.push({ name: 'deepseek_task_preflight',
+  description: 'Preview a NEW Direct or Lead policy without reading session state or creating a session. Flags contradictory tool, child and budget settings. MCP uses the existing Runtime connection; the calculation performs no native calls. Not live admission: availability and remaining budgets are unchecked. Use capabilities/reconcile for existing sessions.',
+  inputSchema: { type: 'object', required: ['kind', 'cwd'], additionalProperties: false, properties: {
+    kind: { type: 'string', enum: ['direct', 'lead'] }, cwd: { type: 'string', minLength: 1, description: 'Explicit absolute workspace path on the runtime host. Its existence is not checked.' },
+    policy: { type: 'object', properties: previewProperties, additionalProperties: false },
+  } } });
 for (const tool of tools.filter((t) => !t.annotations)) {
-  const readOnly = ['deepseek_tasks_list', 'deepseek_task_tree', 'deepseek_capabilities'].includes(tool.name);
+  const readOnly = ['deepseek_tasks_list', 'deepseek_task_tree', 'deepseek_capabilities', 'deepseek_task_preflight', 'deepseek_task_evidence', 'deepseek_recovery_preview'].includes(tool.name);
   tool.annotations = { readOnlyHint: readOnly, destructiveHint: false, idempotentHint: readOnly || tool.name === 'deepseek_task_cancel', openWorldHint: !readOnly };
   tool.outputSchema = { type: 'object', additionalProperties: true };
 }
@@ -636,9 +664,63 @@ export async function callTool(name, args = {}, context = {}) {
   if (!definition) throw new Error(`Unknown tool: ${name}`);
   validateInput(args, definition.inputSchema);
   context.signal?.throwIfAborted();
+  if (name === 'deepseek_task_preflight') {
+    if (!path.isAbsolute(args.cwd)) throw new Error('Preflight requires an absolute cwd on this runtime host');
+    const input = args.policy || {}, lead = args.kind === 'lead';
+    if (!lead && (Object.hasOwn(input, 'max_children') || Object.hasOwn(input, 'child_policy'))) throw new Error('Direct preflight does not accept Lead child settings');
+    const policy = requestPolicy(input, { withChildren: lead });
+    return { schema: 1, mode: 'prospective-policy-only', kind: args.kind, cwd: args.cwd,
+      plannedModel: { provider: 'deepseek-official', model: contract.flashModel, available: null },
+      ...policyPreview(policy, { lead }), submitted: false, admissionChecked: false,
+      modelCalls: 0, runtimeChecked: false,
+      unchecked: ['workspace-existence', 'native-preset-and-model', 'actual-tool-exposure', 'third-party-registration',
+        'existing-session-policy', 'remaining-shared-budget', 'runtime-version-and-connection'],
+      nextAction: 'Resolve warnings without widening authorization. Check runtime health; execution revalidates native availability, policy and shared budgets. This preview is not a permission grant.' };
+  }
   if (name === 'deepseek_flash') return runFlash(args, context.onProgress, context.signal, context.runtime, context.budgetRootId);
   if (name === 'deepseek_lead') return runLead(args, context.onProgress, context.signal, context.runtime);
   const runtime = context.runtime || readRuntime();
+  if (name === 'deepseek_task_evidence' || name === 'deepseek_recovery_preview') {
+    requireManagedRuntime(runtime);
+    const store = new TaskStore(runtime.collabStateDirectory), selected = store.get(args.session_id);
+    if (!selected?.policy) throw new Error('Evidence and recovery preview require an existing managed task');
+    const fixedContext = { ...context, runtime };
+    const graph = await callTool('deepseek_task_tree', { session_id: args.session_id }, fixedContext);
+    const records = graph.nodes.map(n => store.get(n.sessionId)).filter(Boolean);
+    if (name === 'deepseek_recovery_preview') {
+      const plan = await callTool('deepseek_task_reconcile', { session_id: args.session_id, action: 'inspect' }, fixedContext);
+      const current = plan.sessions.map(row => store.get(row.sessionId)).filter(Boolean);
+      const preview = recoveryPreview({ plan, records: current, graph, deadline: deadlineFor(store, args.session_id) });
+      if (plan.sessions.some(row => row.revision !== (store.get(row.sessionId)?.revision ?? null))) {
+        preview.canPrepare = false; preview.state = 'blocked';
+        preview.blockers.push({ reason: 'task-changed-during-preview' });
+      }
+      return preview;
+    }
+    const answers = new Map(), results = new ResultStore(runtime.collabStateDirectory);
+    for (const node of graph.nodes.slice(0, 64)) {
+      context.signal?.throwIfAborted();
+      if (Number.isSafeInteger(node.turn) && node.turn > 0) {
+        try { answers.set(node.sessionId, retainedAnswer(results.get(node.sessionId, node.turn))); }
+        catch { answers.set(node.sessionId, { available: false, error: 'retained-output-unreadable' }); }
+      }
+    }
+    const session = graph.nodes.find(n => n.sessionId === args.session_id);
+    const artifacts = args.artifact_paths?.length ? await hashArtifacts(session?.cwd, args.artifact_paths, context.signal) : [];
+    let execution;
+    try {
+      const trace = await callTool('deepseek_task_trace', { session_id: args.session_id, max_messages: 20, limit: 1 }, fixedContext);
+      execution = { sessionId: args.session_id, throughSeq: trace.throughSeq,
+        coverage: 'selected-session-visible-tail', historyTruncated: trace.nextBeforeSeq !== null,
+        refs: trace.items.filter(i => ['tool/call', 'tool/result', 'turn/end'].includes(i.type))
+          .map(i => ({ seq: i.seq, turn: i.turn, type: i.type, name: i.name, callId: i.callId, isError: i.isError })),
+        nextBeforeSeq: trace.nextBeforeSeq, testsExecutedByExporter: false };
+    } catch { execution = { available: false, reason: 'native-trace-unavailable', testsExecutedByExporter: false }; }
+    const familyNow = taskIndex(runtime.collabStateDirectory).list().filter(row => (row.rootId || row.id) === graph.rootId);
+    const stable = familyNow.length === graph.nodes.length && records.every(row => store.get(row.id)?.revision === row.revision)
+      && graph.nodes.every(node => records.find(row => row.id === node.sessionId)?.revision === node.revision);
+    return deliveryEvidence({ graph, records, answers, artifacts, execution, stable, root: store.get(graph.rootId) });
+  }
   if (name === 'deepseek_task_trace') {
     const managed = nativeTaskState(runtime, args.session_id);
     if (!managed?.policy) throw new Error('Trace is restricted to an existing managed Collab task');
@@ -770,22 +852,10 @@ export async function callTool(name, args = {}, context = {}) {
     const result = await sessionResult(runtime, args.session_id);
     if (args.expected_turn !== undefined && args.expected_turn !== result.turnId) throw new Error('Task turn changed; restart pagination');
     const offset = args.offset || 0, limit = args.limit || 12000;
-    const text = result.answer || '';
     const artifact = runtime.collabStateDirectory && result.turnId > 0 && result.submission?.state !== 'pending'
       ? new ResultStore(runtime.collabStateDirectory).page(args.session_id, result.turnId, { offset, limit, revision: args.expected_revision }) : null;
-    return { sessionId: result.sessionId, turnId: result.turnId, status: result.status, running: result.running,
-      childrenPending: result.childrenPending, text: text.slice(offset, offset + limit), totalChars: text.length,
-      nextOffset: offset + limit < text.length ? offset + limit : null,
-      sourceTruncated: result.answerTruncated, ...(!result.finalization?.answer && artifact?.totalChars ? artifact : {}),
-      finalization: result.finalization, usage: result.usage, error: result.error, failure: result.failure,
-      diagnostic: result.diagnostic, admission: result.admission, admissionBlock: result.admissionBlock,
-      effectiveDeadline: result.effectiveDeadline, reconciliation: result.reconciliation,
-      recovery: result.recovery, recoveryHolds: result.recoveryHolds,
-      model: result.model, provider: result.provider, permission: result.permission,
-      finishReason: result.finishReason, toolCalls: result.progress?.toolCalls || [],
-      activity: result.activity, activityTruncated: result.activityTruncated, completion: result.completion,
-      progress: { step: result.progress?.step, turn: result.turnId }, budgetLedger: result.budgetLedger, budgetPolicy: result.budgetPolicy,
-      ...(args.include_task ? { originalTask: nativeTaskState(runtime, args.session_id)?.originalTask || null, effectivePolicy: result.effectivePolicy } : {}) };
+    return taskResultView(result, { offset, limit, artifact, includeTask: args.include_task === true,
+      originalTask: args.include_task ? nativeTaskState(runtime, args.session_id)?.originalTask || null : null });
   }
   if (name === 'deepseek_runtime_status') {
     const [sessions, models, presets] = await Promise.all([

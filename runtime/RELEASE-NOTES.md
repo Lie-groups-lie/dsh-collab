@@ -1,3 +1,25 @@
+# 0.4.0-rc.4 — delivery evidence and recovery preview
+
+- Add read-only delivery manifests: current task family receipts, retained output hashes, bounded execution references, optional explicit workspace file hashes and shared accounting. No file contents or full transcript export. Execution settlement is separate from acceptance, which remains unvalidated.
+- Add read-only recovery previews with preserved children, interrupted receipts, uncertain side effects and effective deadlines. Opening a preview neither prepares recovery nor starts work. Explicit preparation remains gated by current native evidence and never resets usage or reruns settled children.
+- Add on-demand Delivery and Recovery tabs, readable summaries, collapsed exact audit data and explicit JSON downloads. Keep native conversation rendering, task trees and usage/policy sidebar.
+- Runtime and Clients use the same rc.4 release; full profile exposes 30 tools. Core stays at 15. Research/AI4Math remain separate experimental extensions and are not included.
+
+# 0.4.0-rc.3 — policy preview, compact receipts and connection diagnostics
+
+- Clients include a shared setup entry for Codex and Claude Code. Preview actual paths before installation, use the host's marketplace commands, and stop on source conflicts without uninstalling existing plugins or changing permission grants.
+- Add authenticated, read-only live diagnostics with redacted reports and specific next steps for discovery, authentication, reachability and contract failures. No task submission, model call, automatic backend startup or replay.
+
+- Add read-only deepseek_task_preflight for new-task policy conflicts. This is a prospective policy calculation, not native admission or an existing-session recovery check.
+- Preserve delegation, messaging, child capability and warning fields in paged task details.
+- Reject ambiguous automatic Runtime discovery instead of choosing the newest record; provide offline, redacted Clients diagnostics.
+- Report MCP response/transport failures without replaying or cancelling accepted tasks.
+- Compact host descriptions without removing budget or permission fields; retain an optional 15-tool core profile and default to the full 28-tool profile.
+- Candidate Clients add compact receipts with exact policy references, accounting totals and full-detail read links; retain complete visible answers and distinct partial output. Omit per-request ledger IDs and trace lists only from the default presentation, never durable storage or DSH UI.
+- Add host-only task_session_id aliases and conditional status/result reads. Conflicting IDs fail before dispatch; unchanged receipts never mean empty answers or skipped Runtime checks. Compact progress notifications avoid repeating growing text, while full detail remains available.
+- Use host-neutral labels for newly created child tasks. Deny both pwsh and bash when terminal use is disabled or permission is read-only.
+- Native macOS acceptance and mathematical effectiveness remain unestablished. Research and AI4Math are separate experimental extensions, excluded from the standard public download. Historical native access violations are not claimed fixed by this release.
+
 # 0.4.0-rc.2 — Task lineage, build provenance and pending inbox preservation
 
 - Reuse native DSH MarkdownText and theme tokens in the read-only process/result view. Show user bubbles, per-turn conversation rows, paired tool calls/results and a lazy trajectory outline; keep the task tree and metrics/child-policy sidebar. No native composer, retry, fork or submit action is mounted. Older windows with missing call results are labelled as incomplete evidence, never inferred to be running or successful.
